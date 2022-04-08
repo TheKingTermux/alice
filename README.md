@@ -5,4 +5,4 @@ Jan lupa follow ig ku : @thekingtermux
 
 ![GitHub stats](https://github-readme-stats.vercel.app/api?username=TheKingTermux&theme=radical&title_color=8E2DE2&text_color=fff&show_icons=true)
 
-![Readme Card](https://github-readme-stats.vercel.app/api/pin/?username=anuraghazra&repo=github-readme-stats)
+![Readme Card](https://github-readme-stats.vercel.app/api/pin/?username=TheKingTermux&repo=alice)
