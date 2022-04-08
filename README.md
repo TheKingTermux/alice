@@ -1,2 +1,2 @@
 #  AཽLཽIཽCཽEཽ
-FOLLOW IG KU : @thekingtermux
+Jan lupa follow ig ku : @thekingtermux
