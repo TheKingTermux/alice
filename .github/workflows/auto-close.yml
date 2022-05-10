@@ -1,2 +1,0 @@
-- name: Issue moderator with commands
-  uses: tachiyomiorg/issue-moderator-action@v1.5
