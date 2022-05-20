@@ -11,6 +11,6 @@ jobs:
     steps:
     - uses: actions/first-interaction@v1
       with:
-        repo-token: ${{ secrets.GITHUB_TOKEN }}
+        repo-token: ${{ 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 }}
         issue-message: 'Terimakasih telah memberikan isu terbaru kepada kami'
         pr-message: 'Terimakasih telah memberikan kontribusi kepada kami'
