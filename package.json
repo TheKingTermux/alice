@@ -11,7 +11,7 @@
   "license": "Apache-2.0",
   "dependencies": {
     "@open-wa/wa-automate": "^4.7.1",
-    "@open-wa/wa-decrypt": "^2.0.1",
+    "@open-wa/wa-decrypt": "^4.0.0",
     "area-selection-js": "0.0.2",
     "axios": "^0.27.0",
     "bent": "^7.3.10",
