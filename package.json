@@ -45,7 +45,7 @@
     "mysql": "^2.18.1",
     "nana-api": "^1.1.2",
     "needle": "^3.0.0",
-    "nhentai-api": "^3.0.2",
+    "nhentai-api": "^3.4.3",
     "nhentai-js": "^4.0.0",
     "node-fetch": "^3.0.0",
     "node-gtts": "^2.0.2",
