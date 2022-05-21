@@ -33,7 +33,7 @@
     "got": "^11.7.0",
     "image-size": "^1.0.0",
     "got": "^12.0.0",
-    "image-size": "^0.9.1",
+    "image-size": "^1.0.1",
     "image-to-base64": "^2.1.1",
     "image-to-pdf": "^1.0.0",
     "install-peerdeps": "^3.0.3",
