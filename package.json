@@ -34,7 +34,7 @@
     "image-size": "^1.0.0",
     "got": "^12.0.0",
     "image-size": "^1.0.1",
-    "image-to-base64": "^2.1.1",
+    "image-to-base64": "^2.2.0",
     "image-to-pdf": "^1.0.0",
     "install-peerdeps": "^3.0.3",
     "jimp": "^0.16.1",
