@@ -9,7 +9,7 @@ name: Labeler
 on: [issues, pull_request]
 
 jobs:
-  label:
+  label:'{"Auto Re-Open","Bot Update","Auto Updated":["Renovate updates"],"Bot Update":["WhiteSource Renovate"],"question":["help"]}'
 
     runs-on: ubuntu-latest
     permissions:
