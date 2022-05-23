@@ -59,7 +59,7 @@
     "remove.bg": "^1.3.0",
     "request": "^2.88.2",
     "saucenao": "0.0.2",
-    "sharp": "^0.30.0",
+    "sharp": "^0.30.5",
     "sharp-cli": "^1.15.0",
     "thumbbot": "^0.4.1",
     "tiktok-scraper": "^1.4.36",
