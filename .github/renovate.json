@@ -5,7 +5,5 @@
   "schedule": [
     "every sunday"
   ],
-  "timezone": [
-    "Indonesia/Jakarta"
-  ]
+  "timezone": "Indonesia/Jakarta"
 }
