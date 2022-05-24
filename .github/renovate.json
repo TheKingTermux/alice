@@ -5,15 +5,13 @@
   ],
   "schedule": [
     "every sunday"
+  ],
+  "major": [
+    {
+      "dependencyDashboardApproval": true
+    }
   ]
 }
-
-{
-  "major": {
-    "dependencyDashboardApproval": true
-  }
-}
-
 {
   "packageRules": [
     {
