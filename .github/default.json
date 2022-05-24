@@ -1,3 +1,27 @@
 {
-  "rebaseWhen": "behind-base-branch"
+  "rebaseWhen": "behind-base-branch",
+  "prCreation": "immediate",
+  "prConcurrentLimit": 0,
+  "dependencyDashboardApproval": true,
+  "dependencyDashboardAutoclose": true,
+}
+{
+  "npm": {
+    "enabled": true
+  }
+}
+{
+  "extends": [
+    ":assignee(renovate[bot])",
+    ":reviewer(TheKingTermux)"
+  ]
+}
+{
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": [
+      "Bot Update",
+      "Need Update"
+    ]
+  }
 }
