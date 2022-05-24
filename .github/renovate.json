@@ -15,7 +15,7 @@
       "matchManagers": ["npm"],
       "matchPackagePatterns": ["^npm"],
       "groupName": ["NPM Update"],
-      "assignees": ["TheKingTermux", "Renovate[bot]"],
+      "assignees": ["TheKingTermux", "renovate[bot]"],
       "label": ["Bot Update", "dependencies", "Auto Updated"],
     }
   ]
