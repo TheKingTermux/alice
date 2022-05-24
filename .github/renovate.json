@@ -1,10 +1,14 @@
 {
   "extends": [
     "config:base",
+    ":assignee(renovate[bot])",
+    ":reviewer(TheKingTermux)",
     ":dependencyDashboardApproval",
-    "dependencyDashboardApproval": true
-    "dependencyDashboardAutoclose": true
+    "dependencyDashboardAutoclose": true,
     "enabledManagers": ["npm"],
+    "rebaseWhen": "behind-base-branch",
+    "prCreation": "immediate",
+    "prConcurrentLimit": 0,
   ],
   "schedule": [
     "every sunday"
@@ -18,5 +22,15 @@
       "assignees": ["TheKingTermux", "renovate[bot]"],
       "label": ["Bot Update", "dependencies", "Auto Updated"],
     }
-  ]
+  ],
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": [
+      "Bot Update",
+      "Need Update"
+    ],
+  }
+  "npm": {
+    "enabled": true
+  }
 }
