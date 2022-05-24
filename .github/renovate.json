@@ -1,10 +1,10 @@
 {
   "extends": [
-    "config:base"
-    ":dependencyDashboardApproval"
-    "dependencyDashboardApproval": true
-    "dependencyDashboardAutoclose": true
-    "enabledManagers": ["npm"]
+    "config:base",
+    ":dependencyDashboardApproval",
+    "dependencyDashboardApproval": true,
+    "dependencyDashboardAutoclose": true,
+    "enabledManagers": ["npm"],
   ],
   "schedule": [
     "every sunday"
