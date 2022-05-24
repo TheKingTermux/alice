@@ -4,7 +4,7 @@
     ":assignee(renovate[bot])",
     ":reviewer(TheKingTermux)",
     ":dependencyDashboardApproval",
-    "dependencyDashboardAutoclose": true,
+    ":dependencyDashboardAutoclose",
     "enabledManagers": ["npm"],
     "rebaseWhen": "behind-base-branch",
     "prCreation": "immediate",
