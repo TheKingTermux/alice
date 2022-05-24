@@ -1,8 +1,28 @@
 {
   "extends": [
     "config:base"
+    ":dependencyDashboardApproval"
   ],
   "schedule": [
     "every sunday"
+  ]
+}
+
+{
+  "major": {
+    "dependencyDashboardApproval": true
+  }
+}
+
+{
+  "packageRules": [
+    {
+      "matchUpdateTypes": ["major"],
+      "matchManagers": ["npm"],
+      "matchPackagePatterns": "^npm",
+      "groupName": ["NPM Update"],
+      "assignees": ["TheKingTermux"],
+      "label": ["Bot Update", "dependencies", "Auto Updated"]
+    }
   ]
 }
