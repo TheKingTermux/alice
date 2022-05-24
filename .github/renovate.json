@@ -2,6 +2,9 @@
   "extends": [
     "config:base"
     ":dependencyDashboardApproval"
+    "dependencyDashboardApproval": true
+    "dependencyDashboardAutoclose": true
+    "enabledManagers": ["npm"]
   ],
   "schedule": [
     "every sunday"
@@ -15,8 +18,5 @@
       "assignees": ["TheKingTermux", "Renovate[bot]"],
       "label": ["Bot Update", "dependencies", "Auto Updated"],
     }
-  ],
-  "dependencyDashboardApproval": ["true"],
-  "dependencyDashboardAutoclose": ["true"],
-  "enabledManagers": ["npm"]
+  ]
 }
