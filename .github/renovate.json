@@ -2,8 +2,8 @@
   "extends": [
     "config:base",
     ":dependencyDashboardApproval",
-    "dependencyDashboardApproval": true,
-    "dependencyDashboardAutoclose": true,
+    "dependencyDashboardApproval": true
+    "dependencyDashboardAutoclose": true
     "enabledManagers": ["npm"],
   ],
   "schedule": [
