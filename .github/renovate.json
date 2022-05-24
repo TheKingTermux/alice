@@ -5,18 +5,18 @@
   ],
   "schedule": [
     "every sunday"
-  ]
-}
-{
+  ],
   "packageRules": [
     {
       "matchUpdateTypes": ["major"],
       "matchManagers": ["npm"],
-      "matchPackagePatterns": "^npm",
+      "matchPackagePatterns": ["^npm"],
       "groupName": ["NPM Update"],
       "assignees": ["TheKingTermux", "Renovate[bot]"],
-      "label": ["Bot Update", "dependencies", "Auto Updated"]
-      "dependencyDashboardApproval": true
+      "label": ["Bot Update", "dependencies", "Auto Updated"],
     }
-  ]
+  ],
+  "dependencyDashboardApproval": ["true"],
+  "dependencyDashboardAutoclose": ["true"],
+  "enabledManagers": ["npm"]
 }
