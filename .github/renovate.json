@@ -5,11 +5,6 @@
   ],
   "schedule": [
     "every sunday"
-  ],
-  "major": [
-    {
-      "dependencyDashboardApproval": true
-    }
   ]
 }
 {
@@ -21,6 +16,7 @@
       "groupName": ["NPM Update"],
       "assignees": ["TheKingTermux"],
       "label": ["Bot Update", "dependencies", "Auto Updated"]
+      "dependencyDashboardApproval": true
     }
   ]
 }
