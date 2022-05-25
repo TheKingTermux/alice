@@ -5,15 +5,13 @@
     ":reviewer(TheKingTermux)",
     ":dependencyDashboardApproval",
     ":dependencyDashboardAutoclose",
-    {
-       "rebaseWhen": [
-         "behind-base-branch"
-       ],
-       "prCreation": [
-         "immediate"
-       ],
-       "prConcurrentLimit": 0,
-    }
+     "rebaseWhen": [
+       "behind-base-branch"
+     ],
+     "prCreation": [
+       "immediate"
+     ],
+     "prConcurrentLimit": 0,
   ],
   "schedule": [
     "every sunday"
