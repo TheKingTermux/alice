@@ -5,7 +5,6 @@
     ":reviewer(TheKingTermux)",
     ":dependencyDashboardApproval",
     ":dependencyDashboardAutoclose",
-    "enabledManagers": ["npm"],
     "rebaseWhen": "behind-base-branch",
     "prCreation": "immediate",
     "prConcurrentLimit": 0,
