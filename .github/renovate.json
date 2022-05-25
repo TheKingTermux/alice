@@ -6,8 +6,12 @@
     ":dependencyDashboardApproval",
     ":dependencyDashboardAutoclose",
     {
-       "rebaseWhen": behind-base-branch,
-       "prCreation": immediate,
+       "rebaseWhen": [
+         "behind-base-branch"
+       ],
+       "prCreation": [
+         "immediate"
+       ],
        "prConcurrentLimit": 0,
     }
   ],
