@@ -4,18 +4,16 @@
     ":assignee(renovate[bot])",
     ":reviewer(TheKingTermux)",
     ":dependencyDashboardApproval",
-    ":dependencyDashboardAutoclose",
-    "rebaseWhen": [
-      {
-        "behind-base-branch"
-      }
-    ],
-        "prCreation": [
-      {
-        "immediate"
-      }
-    ],
-    "prConcurrentLimit": 0,
+    ":dependencyDashboardAutoclose"
+  ],
+  "rebaseWhen": [
+    "behind-base-branch"  
+  ],
+  "prCreation": [
+    "immediate"
+  ],
+  "prConcurrentLimit": [
+    "0"
   ],
   "schedule": [
     "every sunday"
