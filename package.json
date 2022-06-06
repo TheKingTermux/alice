@@ -57,7 +57,7 @@
     "path": "^0.12.7",
     "pm2": "^5.0.0",
     "promise": "^8.1.0",
-    "puppeteer": "^14.0.0",
+    "puppeteer": "^14.2.1",
     "remove.bg": "^1.3.0",
     "request": "^2.88.2",
     "saucenao": "0.0.2",
