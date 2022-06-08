@@ -38,17 +38,8 @@
     "label": [
       "Bot Update",
       "dependencies",
-      "Auto Updated"
-    ],
-  ],
-  "vulnerabilityAlerts": {
-    "enabled": true,
-    "labels": [
-      "Bot Update",
+      "Auto Updated",
       "Need Update"
     ],
-  }
-  "npm": {
-    "enabled": true
-  }
+  ]
 }
