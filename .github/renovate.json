@@ -19,18 +19,10 @@
     "every sunday"
   ],
   "packageRules": [
-    "matchUpdateTypes": [
-      "major"
-    ],
-     "matchManagers": [
-      "npm"
-    ],
-    "matchPackagePatterns": [
-      "^npm"
-    ],
-    "groupName": [
-      "NPM Update"
-    ],
+    "matchUpdateTypes": ["major"],
+    "matchManagers": ["npm"],
+    "matchPackagePatterns": ["^npm"],
+    "groupName": ["NPM Update"],
     "assignees": [
       "TheKingTermux",
       "renovate[bot]"
