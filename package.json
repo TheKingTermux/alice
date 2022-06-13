@@ -49,7 +49,7 @@
     "needle": "^3.0.0",
     "nhentai-api": "^3.4.3",
     "nhentai-js": "^4.0.0",
-    "node-fetch": "^3.2.5",
+    "node-fetch": "^3.2.6",
     "node-gtts": "^2.0.2",
     "node-run-cmd": "^1.0.1",
     "npm-upgrade": "^3.1.0",
