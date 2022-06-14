@@ -17,21 +17,28 @@
   ],
   "schedule": [
     "every sunday"
+  ],  
+  "matchUpdateTypes": [
+    "major"
+  ],   
+  "matchManagers": [
+    "npm"
   ],
-  "packageRules": [
-    "matchUpdateTypes": ["major"],
-    "matchManagers": ["npm"],
-    "matchPackagePatterns": ["^npm"],
-    "groupName": ["NPM Update"],
-    "assignees": [
-      "TheKingTermux",
-      "renovate[bot]"
-    ],
+  "matchPackagePatterns": [
+    "^npm"
+  ],
+  "groupName": [
+    "NPM Update"
+  ],
+  "assignees": [
+    "TheKingTermux",
+    "renovate[bot]"
+  ],
     "label": [
       "Bot Update",
       "dependencies",
       "Auto Updated",
       "Need Update"
-    ]
-  ]
+    ],
+  ],
 }
