@@ -16,10 +16,8 @@
     "0"
   ],
   "schedule": [
-    "every sunday"
-  ]
-}
-{ 
+    "every day"
+  ],
   "packageRule": [
     "matchUpdateTypes": [
       "major"
