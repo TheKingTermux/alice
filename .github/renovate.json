@@ -34,7 +34,7 @@
         "TheKingTermux",
         "renovate[bot]"
       ],
-      "label": [
+      "labels": [
         "Bot Update",
         "dependencies",
         "Auto Updated",
