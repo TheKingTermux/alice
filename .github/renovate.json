@@ -3,8 +3,8 @@
     "config:base",
     ":assignee(renovate[bot])",
     ":reviewer(TheKingTermux)",
-    ":dependencyDashboardApproval",
-    ":dependencyDashboardAutoclose"
+    "dependencyDashboardApproval": true,
+    "dependencyDashboardAutoclose": true
   ],
   "rebaseWhen": [
     "behind-base-branch"  
