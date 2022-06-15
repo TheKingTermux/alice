@@ -14,7 +14,7 @@
   ],
   "prConcurrentLimit": 0,
   "schedule": [
-    "every day"
+    "at any time"
   ],
   "packageRule": [
     {
