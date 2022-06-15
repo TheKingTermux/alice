@@ -12,9 +12,7 @@
   "prCreation": [
     "immediate"
   ],
-  "prConcurrentLimit": [
-    "0"
-  ],
+  "prConcurrentLimit": 0,
   "schedule": [
     "every day"
   ],
