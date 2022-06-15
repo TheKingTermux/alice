@@ -16,8 +16,6 @@
   ],
   "packageRules": [
     {
-      "dependencyDashboardApproval": true,
-      "dependencyDashboardAutoclose": true,
       "matchUpdateTypes": [
         "major"
       ],   
@@ -39,7 +37,9 @@
         "dependencies",
         "Auto Updated",
         "Need Update"
-      ]
+      ],
+      "dependencyDashboardApproval": true,
+      "dependencyDashboardAutoclose": true
     }
   ]
 }
