@@ -16,7 +16,7 @@
   "schedule": [
     "at any time"
   ],
-  "packageRule": [
+  "packageRules": [
     {
       "matchUpdateTypes": [
         "major"
