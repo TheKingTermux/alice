@@ -17,7 +17,7 @@
   ],
   "schedule": [
     "every sunday"
-  ], 
+  ]
 }
 { 
   "packageRule": [
@@ -42,6 +42,6 @@
       "dependencies",
       "Auto Updated",
       "Need Update"
-    ],
-  ],
+    ]
+  ]
 }
