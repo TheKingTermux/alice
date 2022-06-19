@@ -40,16 +40,9 @@
       ],
       "dependencyDashboardApproval": true,
       "dependencyDashboardAutoclose": true,
-      [
-        {
-          "automerge": true,
-          "automergeType": [
-            "pr-comment"
-          ],
-          "automergeComment": [
-            "bors: r+"
-          ]
-        }
+      "automerge": true,
+      "automergeType": "pr-comment",
+      "automergeComment": "bors: r+"
       ]
     }
   ]
