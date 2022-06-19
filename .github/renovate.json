@@ -39,7 +39,17 @@
         "Need Update"
       ],
       "dependencyDashboardApproval": true,
-      "dependencyDashboardAutoclose": true
+      "dependencyDashboardAutoclose": true,
+        {
+          "automerge": true,
+          "automergeType": [
+            "pr-comment"
+          ],
+          "automergeComment": [
+            "bors: r+"
+          ]
+        }
+      ]
     }
   ]
 }
