@@ -4,13 +4,6 @@
     ":assignee(renovate[bot])",
     ":reviewer(TheKingTermux)",
   ],
-  "rebaseWhen": [
-    "behind-base-branch"  
-  ],
-  "prCreation": [
-    "immediate"
-  ],
-  "prConcurrentLimit": 0,
   "schedule": [
     "at any time"
   ],
@@ -42,7 +35,10 @@
       "dependencyDashboardAutoclose": true,
       "automerge": true,
       "automergeType": "pr-comment",
-      "automergeComment": "bors: r+"
+      "automergeComment": "bors: r+",
+      "rebaseWhen": "behind-base-branch",
+      "prCreation": "immediate",
+      "prConcurrentLimit": 0
     }
   ]
 }
