@@ -1,6 +1,6 @@
 | Build | Stable |
 |-------|----------|
-| ![CI](https://github.com/TheKingTermux/alice/workflows/CI/badge.svg?branch=main&event=push) | [![stable release](https://img.shields.io/badge/download-V%201.0.6.5-blue)](https://github.com/TheKingTermux/alice/releases) |
+| ![CI](https://github.com/TheKingTermux/alice/workflows/CI/badge.svg?branch=main&event=push) | [![stable release](https://img.shields.io/github/downloads/TheKingTermux/alice/latest/Alice%20Bot?color=blue&sort=semver&style=plastic)](https://github.com/TheKingTermux/alice/releases/latest) |
 
 
 #  AཽLཽIཽCཽEཽ
