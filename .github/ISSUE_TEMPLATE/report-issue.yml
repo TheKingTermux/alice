@@ -45,12 +45,12 @@ body:
       description: Explain the CVSS.
       placeholder: |
         Example:
-          "* Attack vector
-Network
-* Attack complexity
-Low
-* Privileges required
-None"
+          * Attack vector
+            Network
+          * Attack complexity
+            Low
+          * Privileges required
+            None
     validations:
       required: true
 
@@ -61,12 +61,12 @@ None"
       description: |
         This should be information of the program (like NPM, etc, Affected Version, and Patch) 
       placeholder: |
-        "* Package
-dicer (npm)
-* Affected versions
-<= 0.3.1
-* Patched version
-None"
+        * Package
+          dicer (npm)
+        * Affected versions
+          <= 0.3.1
+        * Patched version
+          None
 
   - type: input
     id: references
