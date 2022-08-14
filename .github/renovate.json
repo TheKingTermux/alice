@@ -2,7 +2,7 @@
   "extends": [
     "config:base",
     ":assignee(TheKingTermux)",
-    ":reviewer(TheKingTermux)",
+    ":reviewer(TheKingTermux)"
   ],
   "schedule": [
     "at any time"
