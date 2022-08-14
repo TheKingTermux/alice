@@ -45,12 +45,12 @@ body:
       description: Explain the CVSS.
       placeholder: |
         Example:
-          * Attack vector
+          "* Attack vector
 Network
 * Attack complexity
 Low
 * Privileges required
-None
+None"
     validations:
       required: true
 
