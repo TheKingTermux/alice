@@ -1,0 +1,79 @@
+name: 🛡️ Security issue report
+description: Report an security issue
+labels: [Security]
+body:
+
+  - type: textarea
+    id: reproduce-steps
+    attributes:
+      label: Description 
+      description: Provide an example of the issue.
+      placeholder: |
+        Example:
+          This affects all versions of package ......
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: severity-check
+    attributes:
+      label: Severity Check
+      description: The number of severity has ben reported.
+      options:
+        - label: Low
+        - label: Moderate
+        - label: High
+        - label: Critical
+    validations:
+      required: true
+
+  - type: textarea
+    id: severity-number
+    attributes:
+      label: Severity Number
+      description: The number of severity has ben reported.
+      placeholder: |
+        Example:
+          "7.5 / 10"
+    validations:
+      required: true
+
+  - type: textarea
+    id: cvss-base-metrixs
+    attributes:
+      label: CVSS base metrics
+      description: Explain the CVSS.
+      placeholder: |
+        Example:
+          * Attack vector
+            Network
+          * Attack complexity
+            Low
+          * Privileges required
+            None
+    validations:
+      required: true
+
+  - type: textarea
+    id: information
+    attributes:
+      label: Information
+      description: |
+        This should be information of the program (like NPM, etc, Affected Version, and Patch) 
+      placeholder: |
+        * Package
+          dicer (npm)
+        * Affected versions
+          <= 0.3.1
+        * Patched version
+          None
+
+  - type: input
+    id: references
+    attributes:
+      label: References
+      description: Where the source information you get
+      placeholder: |
+        Example: "https://nvd.nist.gov/vuln/detail/....."
+    validations:
+      required: true
