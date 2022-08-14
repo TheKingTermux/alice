@@ -20,10 +20,10 @@ body:
       label: Severity Check
       description: The number of severity has ben reported.
       options:
-        - label: **Low**
-        - label: **Moderate**
-        - label: **High**
-        - label: **Critical**
+        - label: Low
+        - label: Moderate
+        - label: High
+        - label: Critical
     validations:
       required: true
 
