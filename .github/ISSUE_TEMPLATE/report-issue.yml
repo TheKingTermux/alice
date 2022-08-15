@@ -20,7 +20,7 @@ body:
       required: true
     attributes:
       label: Severity Check
-      description: The number of severity has ben reported.
+      description: The stats of severity has ben reported.
       options:
         - label: Low
         - label: Moderate
