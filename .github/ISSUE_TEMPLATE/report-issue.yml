@@ -31,7 +31,7 @@ body:
     id: severity-number
     attributes:
       label: Severity Number
-      description: The number of severity has ben reported.
+      description: The number of severity has ben reported (.../10).
       placeholder: |
         Example:
           "7.5 / 10"
