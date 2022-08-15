@@ -16,6 +16,8 @@ body:
 
   - type: checkboxes
     id: severity-check
+    validations:
+      required: true
     attributes:
       label: Severity Check
       description: The number of severity has ben reported.
@@ -24,8 +26,6 @@ body:
         - label: Moderate
         - label: High
         - label: Critical
-    validations:
-      required: true
 
   - type: textarea
     id: severity-number
