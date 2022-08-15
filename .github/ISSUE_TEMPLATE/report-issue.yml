@@ -68,7 +68,7 @@ body:
         * Patched version
           None
 
-  - type: input
+  - type: textarea
     id: references
     attributes:
       label: References
@@ -76,7 +76,7 @@ body:
       placeholder: |
         Example: 
           https://nvd.nist.gov/vuln/detail/.....
-            https://snyk.io/vuln/.....
-              https://huntr.dev/bounties/.....
+          https://snyk.io/vuln/.....
+          https://huntr.dev/bounties/.....
     validations:
       required: true
