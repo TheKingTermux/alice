@@ -63,11 +63,11 @@ body:
       placeholder: |
         Example:
           * Package
-            dicer (npm)
+            .....
           * Affected versions
-            <= 0.3.1
+            .....
           * Patched version
-            None
+            .....
 
   - type: textarea
     id: references
