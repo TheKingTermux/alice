@@ -61,12 +61,13 @@ body:
       description: |
         This should be information of the program (like NPM, etc, Affected Version, and Patch) 
       placeholder: |
-        * Package
-          dicer (npm)
-        * Affected versions
-          <= 0.3.1
-        * Patched version
-          None
+        Example:
+          * Package
+            dicer (npm)
+          * Affected versions
+            <= 0.3.1
+          * Patched version
+            None
 
   - type: textarea
     id: references
