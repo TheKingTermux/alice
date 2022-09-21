@@ -1,6 +1,7 @@
 name: 🛡️ Security issue report
 description: Report an security issue
 labels: [Security, Auto Create Issues]
+milestones: [1.0.6]
 body:
 
   - type: textarea
