@@ -19,7 +19,7 @@
     "chalk": "^4.1.0",
     "dotenv": "^16.0.2",
     "chalk": "^5.0.0",
-    "dotenv": "^16.0.1",
+    "dotenv": "^16.0.3",
     "emoji-regex": "^10.0.0",
     "emoji-strip": "^1.0.1",
     "emoji-unicode": "^2.0.1",
