@@ -13,7 +13,7 @@
     "@open-wa/wa-automate": "^4.47.5",
     "@open-wa/wa-decrypt": "^4.0.0",
     "area-selection-js": "0.0.2",
-    "axios": "^1.1.2",
+    "axios": "^1.1.3",
     "bent": "^7.3.10",
     "brainly-scraper": "^1.0.2",
     "chalk": "^4.1.0",
