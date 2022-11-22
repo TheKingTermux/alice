@@ -25,3 +25,4 @@ jobs:
         stale-pr-message: 'Request ini sudah tidak ada perkembangan'
         stale-issue-label: 'no-issue-activity'
         stale-pr-label: 'no-pr-activity'
+        stale-ignore-label: 'do-not-autoclose'
