@@ -64,7 +64,7 @@
     "request": "^2.88.2",
     "saucenao": "0.0.2",
     "sharp": "^0.31.2",
-    "sharp-cli": "^3.0.0",
+    "sharp-cli": "^4.1.0",
     "thumbbot": "^0.4.1",
     "tiktok-scraper": "^1.4.36",
     "to": "^0.2.9",
