@@ -1,6 +1,6 @@
 | Build | Stable |
 |-------|----------|
-| [![CodeQL](https://github.com/TheKingTermux/alice/actions/workflows/codeql-analysis.yml/badge.svg?branch=main)](https://github.com/TheKingTermux/alice/actions/workflows/codeql-analysis.yml) | [![stable release](https://img.shields.io/github/downloads/TheKingTermux/alice/latest/Alice%20Bot?color=blue&sort=semver&style=plastic)](https://github.com/TheKingTermux/alice/releases/latest) |
+| [![CodeQL](https://github.com/TheKingTermux/alice/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/TheKingTermux/alice/actions/workflows/codeql-analysis.yml) | [![stable release](https://img.shields.io/github/downloads/TheKingTermux/alice/latest/Alice%20Bot?color=blue&sort=semver&style=plastic)](https://github.com/TheKingTermux/alice/releases/latest) |
 
 
 #  AཽLཽIཽCཽEཽ
