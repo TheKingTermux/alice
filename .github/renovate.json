@@ -8,7 +8,10 @@
     "at any time"
   ],
   "labels": [
-    "dependencies"
+    "dependencies",
+    "Bot Update",
+    "Auto Updated",
+    "Need Update"
   ],
   "packageRules": [
     {
