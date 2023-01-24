@@ -12,4 +12,6 @@ updates:
       - "Bot Update"
       - "Auto Updated"
       - "Need Update"
-    milestone: 4
+    milestone: 1
+    reviewers:
+      - "TheKingTermux"
