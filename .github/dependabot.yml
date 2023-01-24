@@ -7,3 +7,8 @@ updates:
     # Check the npm registry for updates every day (weekdays)
     schedule:
       interval: 'weekly'
+    labels:
+      - "dependencies"
+      - "Bot Update"
+      - "Auto Updated"
+      - "Need Update"
