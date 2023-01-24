@@ -7,6 +7,9 @@
   "schedule": [
     "at any time"
   ],
+  "milestones": [
+    "1"
+  ],
   "labels": [
     "dependencies",
     "Bot Update",
