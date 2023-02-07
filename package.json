@@ -39,7 +39,7 @@
     "image-to-base64": "^2.2.0",
     "image-to-pdf": "^2.0.0",
     "install-peerdeps": "^3.0.3",
-    "jimp": "^0.22.0",
+    "jimp": "^0.22.4",
     "jsdom": "^21.1.0",
     "length": "0.0.1",
     "moment-timezone": "^0.5.40",
