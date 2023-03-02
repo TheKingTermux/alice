@@ -15,7 +15,7 @@ Cara penggunaan bot ini
 - kemudian ketik "npm i" untuk meng-install bahan bahan yang dibutuhkan oleh bot
 - setelah selesai, silahkan ketik "npm start" untuk menjalankan botnya
 - Jika sudah berjalan, silahkan tunggu hingga muncul BarCode dalam CMD //note:Koneksi Internet Harus Bagus Agar Tidak Time Out//
-- Done 
+- Done
 
 ![Top Langs](https://github-readme-stats.vercel.app/api/top-langs/?username=TheKingTermux&theme=radical&title_color=8E2DE2&text_color=fff&langs_count=8)
 
