@@ -17,3 +17,5 @@ jobs:
           github-token: ${{ github.token }}
           issue-inactive-days: '1'
           pr-inactive-days: '1'
+          add-issue-labels: 'Solved'
+          add-pr-labels: 'Solved'
