@@ -26,3 +26,5 @@ jobs:
         stale-issue-label: 'no-issue-activity'
         stale-pr-label: 'no-pr-activity'
         stale-ignore-label: 'do-not-autoclose'
+        exempt-issue-labels: 'do-not-autoclose'
+        exempt-pr-labels: 'do-not-autoclose'
