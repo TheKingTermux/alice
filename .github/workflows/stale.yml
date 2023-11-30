@@ -28,4 +28,4 @@ jobs:
         stale-ignore-label: 'do-not-autoclose'
         exempt-issue-labels: 'do-not-autoclose'
         exempt-pr-labels: 'do-not-autoclose'
-remove-stale-when-updated: 'true'
+        remove-stale-when-updated: 'true'
