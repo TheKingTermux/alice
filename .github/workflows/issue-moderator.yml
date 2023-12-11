@@ -71,3 +71,5 @@ jobs:
               }
             ]
           auto-close-ignore-label: do-not-autoclose
+          edit-title-command: "/edit-title"
+          lock-command: "/lock"
