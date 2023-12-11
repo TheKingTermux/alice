@@ -16,7 +16,3 @@ Cara penggunaan bot ini
 - setelah selesai, silahkan ketik "npm start" untuk menjalankan botnya
 - Jika sudah berjalan, silahkan tunggu hingga muncul BarCode dalam CMD //note:Koneksi Internet Harus Bagus Agar Tidak Time Out//
 - Done
-
-![Top Langs](https://github-readme-stats.vercel.app/api/top-langs/?username=TheKingTermux&theme=radical&title_color=8E2DE2&text_color=fff&langs_count=8)
-
-![GitHub stats](https://github-readme-stats.vercel.app/api?username=TheKingTermux&theme=radical&title_color=8E2DE2&text_color=fff&show_icons=true)
