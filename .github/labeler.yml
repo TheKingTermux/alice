@@ -1,4 +1,4 @@
 version: 1
 labels:
 - label: "invalid"
-  title: "^autoclosed$"
+  title: "*. - autoclosed"
