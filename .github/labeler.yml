@@ -1,4 +1,4 @@
-version: 3
+version: 4
 labels:
 - label: "invalid"
-  title: "*. - autoclosed"
+  title: "/autoclosed/gi"
