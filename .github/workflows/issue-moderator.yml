@@ -21,9 +21,10 @@ jobs:
               {
                 "keywords": ["inv", "invalid"],
                 "message": "This marked as a invalid"
-                "labels": ["invalid"],
+                "labels": ["invalid"]
               }
             ]
+
           duplicate-check-enabled: true
           duplicate-check-labels: |
             ["Source request", "Domain changed"]
