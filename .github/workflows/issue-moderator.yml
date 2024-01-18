@@ -20,7 +20,7 @@ jobs:
             [
               {
                 "keywords": ["inv", "invalid"],
-                "message": "This marked as a invalid"
+                "message": "This marked as a invalid",
                 "labels": ["invalid"]
               }
             ]
