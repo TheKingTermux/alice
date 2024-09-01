@@ -1,5 +1,5 @@
-| Stats | Stable |
-|-------|----------|
+| Stats |
+|-------|
 | [![CodeQL](https://github.com/TheKingTermux/alice/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/TheKingTermux/alice/actions/workflows/codeql-analysis.yml)
 | [![Dependency Review](https://github.com/TheKingTermux/alice/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/TheKingTermux/alice/actions/workflows/dependency-review.yml) |
 
