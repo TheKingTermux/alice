@@ -1,6 +1,6 @@
 | Stats |
 |-------|
-| [![CodeQL](https://github.com/TheKingTermux/alice/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/TheKingTermux/alice/actions/workflows/codeql-analysis.yml)
+| [![CodeQL](https://github.com/TheKingTermux/alice/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/TheKingTermux/alice/actions/workflows/github-code-scanning/codeql)
 | [![Dependency Review](https://github.com/TheKingTermux/alice/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/TheKingTermux/alice/actions/workflows/dependency-review.yml) |
 
 #  AཽLཽIཽCཽEཽ
