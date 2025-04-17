@@ -1,6 +1,6 @@
 {
   "extends": [
-    "config:base",
+    "config:recommended",
     ":assignee(TheKingTermux)",
     ":reviewer(TheKingTermux)"
   ],
@@ -17,16 +17,11 @@
     {
       "matchUpdateTypes": [
         "major"
-      ],   
+      ],
       "matchManagers": [
         "npm"
       ],
-      "matchPackagePatterns": [
-        "^npm"
-      ],
-      "groupName": [
-        "NPM Update"
-      ],
+      "groupName": "NPM Update",
       "assignees": [
         "TheKingTermux",
         "renovate[bot]"
@@ -43,7 +38,10 @@
       "automergeComment": "bors: r+",
       "rebaseWhen": "behind-base-branch",
       "prCreation": "immediate",
-      "prConcurrentLimit": 0
+      "prConcurrentLimit": 0,
+      "matchPackageNames": [
+        "/^npm/"
+      ]
     }
   ]
 }
