@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@latest
       - name: Run Codeowners merge check
         uses: OSS-Docs-Tools/code-owner-self-merge@latest
         env:
