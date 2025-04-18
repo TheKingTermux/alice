@@ -4,6 +4,7 @@
 # Specify owners for all files
 * @TheKingTermux
 
-# Assign ownership to all JavaScript and TypeScript files
+# Assign ownership to all JavaScript, TypeScript, And JSON files
 *.js     @TheKingTermux
 *.ts     @TheKingTermux
+*.json   @TheKingTermux
