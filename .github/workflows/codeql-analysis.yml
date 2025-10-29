@@ -20,7 +20,7 @@ on:
       - '**.js'
     branches: [ main ]
   schedule:
-    - cron: '44 5 * * 5'
+    - cron: '0 5 * * *'
 
 jobs:
   analyze:
