@@ -35,7 +35,7 @@
     "image-to-pdf": "^3.0.2",
     "install-peerdeps": "^3.0.7",
     "jimp": "^1.6.0",
-    "jsdom": "^27.2.0",
+    "jsdom": "^27.4.0",
     "length": "0.0.1",
     "moment-timezone": "^0.6.0",
     "multer": "^2.0.2",
