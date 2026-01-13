@@ -1,9 +1,11 @@
-name: Auto Create / Update Security Issues (Dependabot API)
+name: 🛡️ Auto Security Issues (Dependabot)
 
 on:
-  schedule:
-    - cron: "0 */6 * * *"
-  workflow_dispatch:
+  dependabot_alert:
+    types:
+      - created
+      - resolved
+      - reopened
 
 permissions:
   contents: read
@@ -11,37 +13,32 @@ permissions:
   security-events: read
 
 jobs:
-  dependabot-alerts:
+  sync-dependabot-issue:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Fetch Dependabot alerts
-        id: fetch
+      - name: Create / Update / Close Security Issue
         uses: actions/github-script@v7
-        env:
-          GITHUB_TOKEN: ${{ secrets.DEPENDABOT_PAT }}
         with:
           script: |
-            const alerts = await github.paginate(
-              github.rest.dependabot.listAlertsForRepo,
-              {
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                state: 'all',
-                per_page: 100
-              }
-            );
-            return alerts;
-
-      - name: Process alerts
-        uses: actions/github-script@v7
-        env:
-          GITHUB_TOKEN: ${{ secrets.DEPENDABOT_PAT }}
-        with:
-          script: |
-            const alerts = ${{ steps.fetch.outputs.result }};
+            const alert = context.payload.alert;
             const owner = context.repo.owner;
             const repo = context.repo.repo;
+
+            const ghsa = alert.security_advisory.ghsa_id;
+            const cve = alert.security_advisory.cve_id || 'No CVE';
+            const severity = alert.security_advisory.severity.toUpperCase();
+            const cvss = alert.security_advisory.cvss?.score ?? 'N/A';
+            const vector = alert.security_advisory.cvss?.vector_string ?? 'N/A';
+
+            const pkg = alert.dependency.package.name;
+            const eco = alert.dependency.package.ecosystem;
+
+            const vuln = alert.vulnerabilities?.[0];
+            const vulnRange = vuln?.vulnerable_version_range ?? 'Unknown';
+            const patched = vuln?.first_patched_version?.identifier ?? 'None';
+
+            const title = `Security: ${severity} - ${pkg} (${ghsa} / ${cve})`;
 
             const issues = await github.paginate(
               github.rest.issues.listForRepo,
@@ -54,101 +51,83 @@ jobs:
               }
             );
 
-            for (const alert of alerts) {
-              const ghsa = alert.security_advisory.ghsa_id;
-              const cve = alert.security_advisory.cve_id || 'No CVE';
-              const severity = alert.security_advisory.severity.toUpperCase();
-              const cvss = alert.security_advisory.cvss?.score ?? 'N/A';
-              const vector = alert.security_advisory.cvss?.vector_string ?? 'N/A';
+            const existing = issues.find(i => i.title === title);
 
-              const pkg = alert.dependency.package.name;
-              const eco = alert.dependency.package.ecosystem;
-
-              const vuln = alert.vulnerabilities?.[0];
-              const vulnRange = vuln?.vulnerable_version_range ?? 'Unknown';
-              const patched = vuln?.first_patched_version?.identifier ?? 'None';
-
-              const title = `Security: ${severity} - ${pkg} (${ghsa} / ${cve})`;
-              const existing = issues.find(i => i.title === title);
-
-              const body = `
-            ## Description
-            This affects versions of **${pkg}** and was detected automatically by Dependabot.
+            const body = `
+            ## 🛡️ Security Issue (Auto-generated)
             
-            Example:
-            This affects all versions of package **${pkg}** within the vulnerable range.
+            ### Description
+            ${alert.security_advisory.summary}
             
-            ---
+            ### Severity Check
+            - ${severity === 'LOW' ? '☑' : '☐'} Low
+            - ${severity === 'MODERATE' ? '☑' : '☐'} Moderate
+            - ${severity === 'HIGH' ? '☑' : '☐'} High
+            - ${severity === 'CRITICAL' ? '☑' : '☐'} Critical
             
-            ## Severity Check
-            - [${severity === 'LOW' ? 'x' : ' '}] Low
-            - [${severity === 'MODERATE' ? 'x' : ' '}] Moderate
-            - [${severity === 'HIGH' ? 'x' : ' '}] High
-            - [${severity === 'CRITICAL' ? 'x' : ' '}] Critical
-            
-            ---
-            
-            ## Severity Number
+            ### Severity Score
             ${cvss} / 10
             
-            ---
-            
-            ## CVSS base metrics
+            ### CVSS Base Metrics
             ${vector}
             
-            Example:
-            - **Attack vector**
-              Network
-            - **Attack complexity**
-              Low
-            - **Privileges required**
-              None
-            
-            ---
-            
-            ## Information
-            - **Package:** ${pkg} (${eco})
+            ### Affected Information
+            - **Package:** ${pkg}
+            - **Ecosystem:** ${eco}
             - **Affected versions:** ${vulnRange}
             - **Patched version:** ${patched}
             
-            ---
-            
-            ## References
+            ### References
             - https://github.com/advisories/${ghsa}
             - ${alert.html_url}
-              `.trim();
+            
+            ---
+            _This issue was automatically generated from a Dependabot alert._
+            `.trim();
 
-              if (alert.state === 'open') {
-                if (!existing) {
-                  await github.rest.issues.create({
-                    owner,
-                    repo,
-                    title,
-                    body,
-                    labels: ['Security', 'Auto Create Issues', 'do-not-autoclose'],
-                    assignees: ['TheKingTermux']
-                  });
-                  console.log(`Created issue: ${title}`);
-                } else {
-                  await github.rest.issues.update({
-                    owner,
-                    repo,
-                    issue_number: existing.number,
-                    body,
-                    state: 'open'
-                  });
-                  console.log(`Updated issue: ${title}`);
-                }
-              }
-
-              if (['dismissed', 'fixed'].includes(alert.state) && existing) {
+            // =============================
+            // OPEN / UPDATE ISSUE
+            // =============================
+            if (alert.state === 'open') {
+              if (!existing) {
+                await github.rest.issues.create({
+                  owner,
+                  repo,
+                  title,
+                  body,
+                  labels: ['Security', 'Auto Create Issues'],
+                  assignees: ['TheKingTermux']
+                });
+                console.log(`Created issue: ${title}`);
+              } else {
                 await github.rest.issues.update({
                   owner,
                   repo,
                   issue_number: existing.number,
-                  state: 'closed',
-                  state_reason: 'not_planned'
+                  body,
+                  state: 'open'
                 });
-                console.log(`Closed issue: ${title}`);
+                console.log(`Updated issue: ${title}`);
               }
+            }
+
+            // =============================
+            // CLOSE ISSUE (IF RESOLVED)
+            // =============================
+            if (alert.state === 'fixed' && existing) {
+              const labels = existing.labels.map(l => l.name);
+              if (labels.includes('do-not-autoclose')) {
+                console.log(`Skip autoclose due to do-not-autoclose label`);
+                return;
+              }
+
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: existing.number,
+                state: 'closed',
+                state_reason: 'not_planned'
+              });
+
+              console.log(`Closed issue: ${title}`);
             }
