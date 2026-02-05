@@ -11,13 +11,13 @@ permissions:
 
 jobs:
   process-dependabot-security-pr:
-    if: github.event.pull_request.user.login == 'dependabot[bot]' && contains(github.event.pull_request.title, 'Bumps')  # filter Dependabot PR
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && contains(github.event.pull_request.title, 'Bumps')
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo (untuk context kalau perlu)
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Extract vulnerability info from PR body & Create/Update Issue
+      - name: Extract info & Create/Update Issue
         uses: actions/github-script@v7
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
@@ -31,10 +31,9 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
 
-            // Ambil PR body dari env (karena context.payload.pull_request.body kadang truncated)
             const prBody = process.env.PR_BODY || payload.pull_request.body || '';
 
-            // Regex / string parse buat ambil data kunci (sesuaikan kalau body beda)
+            // Parse data
             let severity = 'UNKNOWN';
             let ghsa = 'No GHSA';
             let cve = 'No CVE';
@@ -44,72 +43,89 @@ jobs:
             let eco = 'Unknown';
             let vulnRange = 'Unknown';
             let patched = 'None';
-            let summary = 'No summary available';
+            let summary = 'Dependabot security update detected. Merge PR to fix vulnerability.';
 
-            // Parse severity (contoh: **Severity:** High atau dari advisory)
-            const severityMatch = prBody.match(/\*\*Severity:\*\*\s*(\w+)/i) || prBody.match(/Severity:\s*(\w+)/i);
+            const severityMatch = prBody.match(/\*\*Severity:\*\*\s*(\w+)/i) || prBody.match(/Severity:\s*(\w+)/i) || prBody.match(/severity:\s*(\w+)/i);
             if (severityMatch) severity = severityMatch[1].toUpperCase();
 
-            // GHSA / CVE
-            const ghsaMatch = prBody.match(/(GHSA[-a-zA-Z0-9]+)/);
+            const ghsaMatch = prBody.match(/(GHSA[-a-zA-Z0-9]+)/i);
             if (ghsaMatch) ghsa = ghsaMatch[1];
-            const cveMatch = prBody.match(/(CVE-\d{4}-\d+)/);
+            const cveMatch = prBody.match(/(CVE-\d{4}-\d+)/i);
             if (cveMatch) cve = cveMatch[1];
 
-            // Package & versions (dari title atau body)
-            const pkgMatch = prBody.match(/Bumps\s+([^\s]+)\s+from/) || process.env.PR_TITLE.match(/Bumps\s+([^\s]+)/);
+            const pkgMatch = process.env.PR_TITLE.match(/Bumps\s+([^\s]+)/) || prBody.match(/Bumps\s+([^\s]+)\s+from/);
             if (pkgMatch) pkg = pkgMatch[1];
-            const rangeMatch = prBody.match(/Affected versions:\s*([^\\n]+)/i) || prBody.match(/vulnerable\s+versions:\s*([^\\n]+)/i);
+
+            const depBlockMatch = prBody.match(/updated-dependencies:([\s\S]*?)(?=\n---|$)/);
+            if (depBlockMatch) {
+              const block = depBlockMatch[1];
+              const nameMatch = block.match(/dependency-name:\s*["']?([^"'\n]+)["']?/);
+              if (nameMatch && pkg === 'Unknown') pkg = nameMatch[1].trim();
+            }
+
+            const rangeMatch = prBody.match(/(?:Affected|vulnerable)\s+versions?[:\s]*([^\n]+)/i);
             if (rangeMatch) vulnRange = rangeMatch[1].trim();
-            const patchedMatch = prBody.match(/Patched in:\s*([^\\n]+)/i);
+            const patchedMatch = prBody.match(/(?:Patched|fixed)\s+in?[:\s]*([^\n]+)/i);
             if (patchedMatch) patched = patchedMatch[1].trim();
 
-            // Summary (ambil paragraf pertama setelah Vulnerability details)
-            const summaryMatch = prBody.match(/\*\*Vulnerability details\*\*([\s\S]*?)(?=\*\*|$)/i);
-            if (summaryMatch) summary = summaryMatch[1].trim();
+            // Labels severity sesuai repo kamu
+            let issueLabels = ['Security', 'Auto Create Issues', 'dependencies'];
+            let severityLabel = 'Low'; // fallback
+            severity = 'LOW'; // default checkbox
+            if (severity === 'CRITICAL') {
+              severityLabel = 'Critical';
+              severity = 'CRITICAL';
+            } else if (severity === 'HIGH') {
+              severityLabel = 'High';
+              severity = 'HIGH';
+            } else if (severity === 'MODERATE') {
+              severityLabel = 'Moderate';
+              severity = 'MODERATE';
+            }
+            issueLabels.push(severityLabel);
 
             // Title issue
             const title = `Security: ${severity} - ${pkg} (${ghsa} / ${cve})`;
 
-            // Cari issue existing
+            // Cari existing issue
             const issues = await github.paginate(
               github.rest.issues.listForRepo,
-              { owner, repo, state: 'all', labels: 'dependabot-security', per_page: 100 }
+              { owner, repo, state: 'all', labels: 'Auto Create Issues', per_page: 100 }
             );
             const existing = issues.find(i => i.title === title);
 
-            // Body issue rapi mirip punyamu dulu
+            // Body issue dengan indentasi aman (4 spasi)
             const body = `
-            ## 🛡️ Security Vulnerability (from Dependabot PR #${process.env.PR_NUMBER})
-            
-            ### Description
-            ${summary || 'Vulnerability detected in dependency. See PR for details.'}
-            
-            ### Severity Check
-            - ${severity === 'LOW' ? '☑' : '☐'} Low
-            - ${severity === 'MODERATE' ? '☑' : '☐'} Moderate
-            - ${severity === 'HIGH' ? '☑' : '☐'} High
-            - ${severity === 'CRITICAL' ? '☑' : '☐'} Critical
-            
-            ### Severity Score
-            ${cvss} / 10
-            
-            ### CVSS Vector
-            ${vector}
-            
-            ### Affected
-            - **Package:** ${pkg}
-            - **Ecosystem:** ${eco}
-            - **Vulnerable versions:** ${vulnRange}
-            - **Patched version:** ${patched}
-            
-            ### References
-            - Advisory: https://github.com/advisories/${ghsa}
-            - PR: ${process.env.PR_URL}
-            - Dependabot Alert: https://github.com/${owner}/${repo}/security/dependabot/${process.env.PR_NUMBER ? 'related-to-pr-' + process.env.PR_NUMBER : 'unknown'}
-            
-            ---
-            _Auto-generated from Dependabot security PR. Fix by merging PR #${process.env.PR_NUMBER}._
+                ## 🛡️ Security Vulnerability (from Dependabot PR #${process.env.PR_NUMBER})
+
+                ### Description
+                ${summary}
+
+                ### Severity Check
+                - ${severity === 'LOW' ? '☑' : '☐'} Low
+                - ${severity === 'MODERATE' ? '☑' : '☐'} Moderate
+                - ${severity === 'HIGH' ? '☑' : '☐'} High
+                - ${severity === 'CRITICAL' ? '☑' : '☐'} Critical
+
+                ### Severity Score
+                ${cvss} / 10
+
+                ### CVSS Vector
+                ${vector}
+
+                ### Affected
+                - **Package:** ${pkg}
+                - **Ecosystem:** ${eco}
+                - **Vulnerable versions:** ${vulnRange}
+                - **Patched version:** ${patched}
+
+                ### References
+                - Advisory: https://github.com/advisories/${ghsa}
+                - PR: ${process.env.PR_URL}
+                - Dependabot Alert: https://github.com/${owner}/${repo}/security/dependabot
+
+                ---
+                _Auto-generated from Dependabot security PR. Fix by merging PR #${process.env.PR_NUMBER}._
             `.trim();
 
             if (payload.action === 'opened' || payload.action === 'synchronize' || payload.action === 'reopened') {
@@ -118,10 +134,10 @@ jobs:
                   owner, repo,
                   title,
                   body,
-                  labels: ['Security', 'Auto Create Issues'],
+                  labels: issueLabels,
                   assignees: ['TheKingTermux']
                 });
-                console.log(`Created issue: ${title}`);
+                console.log(`Created issue: ${title} with labels ${issueLabels.join(', ')}`);
               } else {
                 await github.rest.issues.update({
                   owner, repo,
@@ -129,11 +145,19 @@ jobs:
                   body,
                   state: 'open'
                 });
+                const currentLabels = existing.labels.map(l => l.name);
+                const missingLabels = issueLabels.filter(l => !currentLabels.includes(l));
+                if (missingLabels.length > 0) {
+                  await github.rest.issues.addLabels({
+                    owner, repo,
+                    issue_number: existing.number,
+                    labels: missingLabels
+                  });
+                }
                 console.log(`Updated issue: ${title}`);
               }
             }
 
-            // Close issue kalau PR closed (merged atau rejected)
             if (payload.action === 'closed' && existing) {
               const labels = existing.labels.map(l => l.name);
               if (!labels.includes('do-not-autoclose')) {
@@ -141,7 +165,7 @@ jobs:
                   owner, repo,
                   issue_number: existing.number,
                   state: 'closed',
-                  state_reason: 'completed'  // atau 'not_planned'
+                  state_reason: 'completed'
                 });
                 console.log(`Closed issue: ${title}`);
               }
