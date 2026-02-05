@@ -118,7 +118,7 @@ jobs:
                   owner, repo,
                   title,
                   body,
-                  labels: ['Security', 'dependabot-security', 'Auto'],
+                  labels: ['Security', 'Auto Create Issues'],
                   assignees: ['TheKingTermux']
                 });
                 console.log(`Created issue: ${title}`);
