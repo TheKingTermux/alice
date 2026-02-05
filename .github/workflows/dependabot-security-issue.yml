@@ -1,133 +1,172 @@
-name: 🛡️ Auto Security Issues (Dependabot)
+name: 🛡️ Dependabot Security PR → Auto Create/Update Issue
 
 on:
-  dependabot_alert:
-    types:
-      - created
-      - resolved
-      - reopened
+  pull_request:
+    types: [opened, synchronize, closed, reopened]
 
 permissions:
   contents: read
   issues: write
-  security-events: read
+  pull-requests: read
 
 jobs:
-  sync-dependabot-issue:
+  process-dependabot-security-pr:
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && contains(github.event.pull_request.title, 'Bumps')
     runs-on: ubuntu-latest
-
     steps:
-      - name: Create / Update / Close Security Issue
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Extract info & Create/Update Issue
         uses: actions/github-script@v7
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
         with:
           script: |
-            const alert = context.payload.alert;
+            const { context, github } = require('@actions/github');
+            const payload = context.payload;
             const owner = context.repo.owner;
             const repo = context.repo.repo;
 
-            const ghsa = alert.security_advisory.ghsa_id;
-            const cve = alert.security_advisory.cve_id || 'No CVE';
-            const severity = alert.security_advisory.severity.toUpperCase();
-            const cvss = alert.security_advisory.cvss?.score ?? 'N/A';
-            const vector = alert.security_advisory.cvss?.vector_string ?? 'N/A';
+            const prBody = process.env.PR_BODY || payload.pull_request.body || '';
 
-            const pkg = alert.dependency.package.name;
-            const eco = alert.dependency.package.ecosystem;
+            // Parse data
+            let severity = 'UNKNOWN';
+            let ghsa = 'No GHSA';
+            let cve = 'No CVE';
+            let cvss = 'N/A';
+            let vector = 'N/A';
+            let pkg = 'Unknown';
+            let eco = 'Unknown';
+            let vulnRange = 'Unknown';
+            let patched = 'None';
+            let summary = 'Dependabot security update detected. Merge PR to fix vulnerability.';
 
-            const vuln = alert.vulnerabilities?.[0];
-            const vulnRange = vuln?.vulnerable_version_range ?? 'Unknown';
-            const patched = vuln?.first_patched_version?.identifier ?? 'None';
+            const severityMatch = prBody.match(/\*\*Severity:\*\*\s*(\w+)/i) || prBody.match(/Severity:\s*(\w+)/i) || prBody.match(/severity:\s*(\w+)/i);
+            if (severityMatch) severity = severityMatch[1].toUpperCase();
 
+            const ghsaMatch = prBody.match(/(GHSA[-a-zA-Z0-9]+)/i);
+            if (ghsaMatch) ghsa = ghsaMatch[1];
+            const cveMatch = prBody.match(/(CVE-\d{4}-\d+)/i);
+            if (cveMatch) cve = cveMatch[1];
+
+            const pkgMatch = process.env.PR_TITLE.match(/Bumps\s+([^\s]+)/) || prBody.match(/Bumps\s+([^\s]+)\s+from/);
+            if (pkgMatch) pkg = pkgMatch[1];
+
+            const depBlockMatch = prBody.match(/updated-dependencies:([\s\S]*?)(?=\n---|$)/);
+            if (depBlockMatch) {
+              const block = depBlockMatch[1];
+              const nameMatch = block.match(/dependency-name:\s*["']?([^"'\n]+)["']?/);
+              if (nameMatch && pkg === 'Unknown') pkg = nameMatch[1].trim();
+            }
+
+            const rangeMatch = prBody.match(/(?:Affected|vulnerable)\s+versions?[:\s]*([^\n]+)/i);
+            if (rangeMatch) vulnRange = rangeMatch[1].trim();
+            const patchedMatch = prBody.match(/(?:Patched|fixed)\s+in?[:\s]*([^\n]+)/i);
+            if (patchedMatch) patched = patchedMatch[1].trim();
+
+            // Labels severity
+            let issueLabels = ['Security', 'Auto Create Issues', 'dependencies'];
+            let severityLabel = 'Low'; // fallback
+            severity = 'LOW'; // default untuk checkbox
+            if (severity === 'CRITICAL') {
+              severityLabel = 'Critical';
+              severity = 'CRITICAL';
+            } else if (severity === 'HIGH') {
+              severityLabel = 'High';
+              severity = 'HIGH';
+            } else if (severity === 'MODERATE') {
+              severityLabel = 'Moderate';
+              severity = 'MODERATE';
+            }
+            issueLabels.push(severityLabel);
+
+            // Title issue
             const title = `Security: ${severity} - ${pkg} (${ghsa} / ${cve})`;
 
+            // Cari existing issue
             const issues = await github.paginate(
               github.rest.issues.listForRepo,
-              {
-                owner,
-                repo,
-                state: 'all',
-                labels: 'Auto Create Issues',
-                per_page: 100
-              }
+              { owner, repo, state: 'all', labels: 'Auto Create Issues', per_page: 100 }
             );
-
             const existing = issues.find(i => i.title === title);
 
+            // Body issue (dengan indentasi agar aman dari YAML parser)
             const body = `
-            ## 🛡️ Security Issue (Auto-generated)
-            
-            ### Description
-            ${alert.security_advisory.summary}
-            
-            ### Severity Check
-            - ${severity === 'LOW' ? '☑' : '☐'} Low
-            - ${severity === 'MODERATE' ? '☑' : '☐'} Moderate
-            - ${severity === 'HIGH' ? '☑' : '☐'} High
-            - ${severity === 'CRITICAL' ? '☑' : '☐'} Critical
-            
-            ### Severity Score
-            ${cvss} / 10
-            
-            ### CVSS Base Metrics
-            ${vector}
-            
-            ### Affected Information
-            - **Package:** ${pkg}
-            - **Ecosystem:** ${eco}
-            - **Affected versions:** ${vulnRange}
-            - **Patched version:** ${patched}
-            
-            ### References
-            - https://github.com/advisories/${ghsa}
-            - ${alert.html_url}
-            
-            ---
-            _This issue was automatically generated from a Dependabot alert._
+              ## 🛡️ Security Vulnerability (from Dependabot PR #${process.env.PR_NUMBER})
+
+              ### Description
+              ${summary}
+
+              ### Severity Check
+              - ${severity === 'LOW' ? '☑' : '☐'} Low
+              - ${severity === 'MODERATE' ? '☑' : '☐'} Moderate
+              - ${severity === 'HIGH' ? '☑' : '☐'} High
+              - ${severity === 'CRITICAL' ? '☑' : '☐'} Critical
+
+              ### Severity Score
+              ${cvss} / 10
+
+              ### CVSS Vector
+              ${vector}
+
+              ### Affected
+              - **Package:** ${pkg}
+              - **Ecosystem:** ${eco}
+              - **Vulnerable versions:** ${vulnRange}
+              - **Patched version:** ${patched}
+
+              ### References
+              - Advisory: https://github.com/advisories/${ghsa}
+              - PR: ${process.env.PR_URL}
+              - Dependabot Alert: https://github.com/${owner}/${repo}/security/dependabot
+
+              ---
+              _Auto-generated from Dependabot security PR. Fix by merging PR #${process.env.PR_NUMBER}._
             `.trim();
 
-            // =============================
-            // OPEN / UPDATE ISSUE
-            // =============================
-            if (alert.state === 'open') {
+            if (payload.action === 'opened' || payload.action === 'synchronize' || payload.action === 'reopened') {
               if (!existing) {
                 await github.rest.issues.create({
-                  owner,
-                  repo,
+                  owner, repo,
                   title,
                   body,
-                  labels: ['Security', 'Auto Create Issues'],
+                  labels: issueLabels,
                   assignees: ['TheKingTermux']
                 });
-                console.log(`Created issue: ${title}`);
+                console.log(`Created issue: ${title} with labels ${issueLabels.join(', ')}`);
               } else {
                 await github.rest.issues.update({
-                  owner,
-                  repo,
+                  owner, repo,
                   issue_number: existing.number,
                   body,
                   state: 'open'
                 });
+                const currentLabels = existing.labels.map(l => l.name);
+                const missingLabels = issueLabels.filter(l => !currentLabels.includes(l));
+                if (missingLabels.length > 0) {
+                  await github.rest.issues.addLabels({
+                    owner, repo,
+                    issue_number: existing.number,
+                    labels: missingLabels
+                  });
+                }
                 console.log(`Updated issue: ${title}`);
               }
             }
 
-            // =============================
-            // CLOSE ISSUE (IF RESOLVED)
-            // =============================
-            if (alert.state === 'fixed' && existing) {
+            if (payload.action === 'closed' && existing) {
               const labels = existing.labels.map(l => l.name);
-              if (labels.includes('do-not-autoclose')) {
-                console.log(`Skip autoclose due to do-not-autoclose label`);
-                return;
+              if (!labels.includes('do-not-autoclose')) {
+                await github.rest.issues.update({
+                  owner, repo,
+                  issue_number: existing.number,
+                  state: 'closed',
+                  state_reason: 'completed'
+                });
+                console.log(`Closed issue: ${title}`);
               }
-
-              await github.rest.issues.update({
-                owner,
-                repo,
-                issue_number: existing.number,
-                state: 'closed',
-                state_reason: 'not_planned'
-              });
-
-              console.log(`Closed issue: ${title}`);
             }
