@@ -68,10 +68,10 @@ jobs:
             const patchedMatch = prBody.match(/(?:Patched|fixed)\s+in?[:\s]*([^\n]+)/i);
             if (patchedMatch) patched = patchedMatch[1].trim();
 
-            // Labels severity sesuai repo kamu
+            // Labels severity
             let issueLabels = ['Security', 'Auto Create Issues', 'dependencies'];
             let severityLabel = 'Low'; // fallback
-            severity = 'LOW'; // default checkbox
+            severity = 'LOW'; // default untuk checkbox
             if (severity === 'CRITICAL') {
               severityLabel = 'Critical';
               severity = 'CRITICAL';
@@ -94,38 +94,38 @@ jobs:
             );
             const existing = issues.find(i => i.title === title);
 
-            // Body issue dengan indentasi aman (4 spasi)
+            // Body issue (dengan indentasi agar aman dari YAML parser)
             const body = `
-                ## 🛡️ Security Vulnerability (from Dependabot PR #${process.env.PR_NUMBER})
+              ## 🛡️ Security Vulnerability (from Dependabot PR #${process.env.PR_NUMBER})
 
-                ### Description
-                ${summary}
+              ### Description
+              ${summary}
 
-                ### Severity Check
-                - ${severity === 'LOW' ? '☑' : '☐'} Low
-                - ${severity === 'MODERATE' ? '☑' : '☐'} Moderate
-                - ${severity === 'HIGH' ? '☑' : '☐'} High
-                - ${severity === 'CRITICAL' ? '☑' : '☐'} Critical
+              ### Severity Check
+              - ${severity === 'LOW' ? '☑' : '☐'} Low
+              - ${severity === 'MODERATE' ? '☑' : '☐'} Moderate
+              - ${severity === 'HIGH' ? '☑' : '☐'} High
+              - ${severity === 'CRITICAL' ? '☑' : '☐'} Critical
 
-                ### Severity Score
-                ${cvss} / 10
+              ### Severity Score
+              ${cvss} / 10
 
-                ### CVSS Vector
-                ${vector}
+              ### CVSS Vector
+              ${vector}
 
-                ### Affected
-                - **Package:** ${pkg}
-                - **Ecosystem:** ${eco}
-                - **Vulnerable versions:** ${vulnRange}
-                - **Patched version:** ${patched}
+              ### Affected
+              - **Package:** ${pkg}
+              - **Ecosystem:** ${eco}
+              - **Vulnerable versions:** ${vulnRange}
+              - **Patched version:** ${patched}
 
-                ### References
-                - Advisory: https://github.com/advisories/${ghsa}
-                - PR: ${process.env.PR_URL}
-                - Dependabot Alert: https://github.com/${owner}/${repo}/security/dependabot
+              ### References
+              - Advisory: https://github.com/advisories/${ghsa}
+              - PR: ${process.env.PR_URL}
+              - Dependabot Alert: https://github.com/${owner}/${repo}/security/dependabot
 
-                ---
-                _Auto-generated from Dependabot security PR. Fix by merging PR #${process.env.PR_NUMBER}._
+              ---
+              _Auto-generated from Dependabot security PR. Fix by merging PR #${process.env.PR_NUMBER}._
             `.trim();
 
             if (payload.action === 'opened' || payload.action === 'synchronize' || payload.action === 'reopened') {
