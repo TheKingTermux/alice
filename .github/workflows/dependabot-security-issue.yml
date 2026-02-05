@@ -1,0 +1,133 @@
+name: 🛡️ Auto Security Issues (Dependabot)
+
+on:
+  dependabot_alert:
+    types:
+      - created
+      - resolved
+      - reopened
+
+permissions:
+  contents: read
+  issues: write
+  security-events: read
+
+jobs:
+  sync-dependabot-issue:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Create / Update / Close Security Issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const alert = context.payload.alert;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            const ghsa = alert.security_advisory.ghsa_id;
+            const cve = alert.security_advisory.cve_id || 'No CVE';
+            const severity = alert.security_advisory.severity.toUpperCase();
+            const cvss = alert.security_advisory.cvss?.score ?? 'N/A';
+            const vector = alert.security_advisory.cvss?.vector_string ?? 'N/A';
+
+            const pkg = alert.dependency.package.name;
+            const eco = alert.dependency.package.ecosystem;
+
+            const vuln = alert.vulnerabilities?.[0];
+            const vulnRange = vuln?.vulnerable_version_range ?? 'Unknown';
+            const patched = vuln?.first_patched_version?.identifier ?? 'None';
+
+            const title = `Security: ${severity} - ${pkg} (${ghsa} / ${cve})`;
+
+            const issues = await github.paginate(
+              github.rest.issues.listForRepo,
+              {
+                owner,
+                repo,
+                state: 'all',
+                labels: 'Auto Create Issues',
+                per_page: 100
+              }
+            );
+
+            const existing = issues.find(i => i.title === title);
+
+            const body = `
+            ## 🛡️ Security Issue (Auto-generated)
+            
+            ### Description
+            ${alert.security_advisory.summary}
+            
+            ### Severity Check
+            - ${severity === 'LOW' ? '☑' : '☐'} Low
+            - ${severity === 'MODERATE' ? '☑' : '☐'} Moderate
+            - ${severity === 'HIGH' ? '☑' : '☐'} High
+            - ${severity === 'CRITICAL' ? '☑' : '☐'} Critical
+            
+            ### Severity Score
+            ${cvss} / 10
+            
+            ### CVSS Base Metrics
+            ${vector}
+            
+            ### Affected Information
+            - **Package:** ${pkg}
+            - **Ecosystem:** ${eco}
+            - **Affected versions:** ${vulnRange}
+            - **Patched version:** ${patched}
+            
+            ### References
+            - https://github.com/advisories/${ghsa}
+            - ${alert.html_url}
+            
+            ---
+            _This issue was automatically generated from a Dependabot alert._
+            `.trim();
+
+            // =============================
+            // OPEN / UPDATE ISSUE
+            // =============================
+            if (alert.state === 'open') {
+              if (!existing) {
+                await github.rest.issues.create({
+                  owner,
+                  repo,
+                  title,
+                  body,
+                  labels: ['Security', 'Auto Create Issues'],
+                  assignees: ['TheKingTermux']
+                });
+                console.log(`Created issue: ${title}`);
+              } else {
+                await github.rest.issues.update({
+                  owner,
+                  repo,
+                  issue_number: existing.number,
+                  body,
+                  state: 'open'
+                });
+                console.log(`Updated issue: ${title}`);
+              }
+            }
+
+            // =============================
+            // CLOSE ISSUE (IF RESOLVED)
+            // =============================
+            if (alert.state === 'fixed' && existing) {
+              const labels = existing.labels.map(l => l.name);
+              if (labels.includes('do-not-autoclose')) {
+                console.log(`Skip autoclose due to do-not-autoclose label`);
+                return;
+              }
+
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: existing.number,
+                state: 'closed',
+                state_reason: 'not_planned'
+              });
+
+              console.log(`Closed issue: ${title}`);
+            }
