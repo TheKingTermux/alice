@@ -17,7 +17,7 @@
     "bent": "^7.3.12",
     "brainly-scraper": "^1.0.3",
     "chalk": "^5.6.2",
-    "cheerio": "^1.1.2",
+    "cheerio": "^1.2.0",
     "dotenv": "^17.2.3",
     "emoji-regex": "^10.6.0",
     "emoji-strip": "^1.0.1",
