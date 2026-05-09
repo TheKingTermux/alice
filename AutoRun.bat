@@ -70,7 +70,7 @@ echo BOT TYPE  	: NODEJS
 echo NAME    	: Bȏṭ TKTSȗɞṡ
 echo TEAM    	: TheKingTermux
 echo INSTAGRAM 	: https://instagram.com/thekingtermux
-echo WHATSAPP  	: https://wa.me/6282301826966
+echo WHATSAPP  	: https://wa.me/6285964357965
 echo ████████████████████████████████
 echo:
 echo Kembali Ke Main Menu ?
