@@ -2,11 +2,12 @@ name: Monitor Semua Workflow
 on:
   workflow_run:
     workflows: 
-      - "Update Weather"
-      - "Metrics"
-      - "Update Meme Image"
-      - "Update Quotes"
-      - "Update Server Tips"
+      - "Greetings"
+      - "Dependency Review"
+      - "CodeQL"
+      - "Codeowners merging"
+      - "Dependabot Updates"
+      - "Dependency Review"
       - "Monitor Pull Requests"
       - "Monitor Issues"
     types:
