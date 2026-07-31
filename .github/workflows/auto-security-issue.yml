@@ -45,27 +45,30 @@ jobs:
             const repo = context.repo.repo;
 
             const prBody = process.env.PR_BODY || payload.pull_request.body || '';
+            const prTitle = process.env.PR_TITLE || payload.pull_request.title || '';
             const author = process.env.PR_AUTHOR || '';
             const botType = author === 'renovate[bot]' ? 'Renovate' : 'Dependabot';
 
-            // 1. Ekstrak GHSA & CVE ID dasar dari deskripsi PR
-            const ghsaMatch = prBody.match(/(GHSA[-a-zA-Z0-9]+)/i);
+            // ==========================================
+            // STRATEGI TAMBAHAN 1: Multi-Pattern ID Extractors (GHSA, CVE, OSV)
+            // ==========================================
+            const ghsaMatch = prBody.match(/(GHSA-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4})/i) || prTitle.match(/(GHSA-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4})/i);
             let ghsa = ghsaMatch ? ghsaMatch[1].toUpperCase() : 'No GHSA';
             
-            const cveMatch = prBody.match(/(CVE-\d{4}-\d+)/i);
+            const cveMatch = prBody.match(/(CVE-\d{4}-\d{4,7})/i) || prTitle.match(/(CVE-\d{4}-\d{4,7})/i);
             let cve = cveMatch ? cveMatch[1].toUpperCase() : 'No CVE';
 
-            // Deteksi nama paket kerentanan
+            // Deteksi nama paket kerentanan (Diperkuat dengan pola ganda)
             let pkg = 'Unknown';
-            const pkgMatch = process.env.PR_TITLE.match(/(?:bumps?|updates?)\s+(?:dependency\s+)?([^\s]+)/i) || 
+            const pkgMatch = prTitle.match(/(?:bumps?|updates?)\s+(?:dependency\s+)?([^\s]+)/i) || 
                              prBody.match(/(?:bumps?|updates?)\s+(?:dependency\s+)?([^\s]+)\s+from/i);
-            if (pkgMatch) pkg = pkgMatch[1];
+            if (pkgMatch) pkg = pkgMatch[1].replace(/[`'"]/g, '');
 
             const depBlockMatch = prBody.match(/updated-dependencies:([\s\S]*?)(?=\n---|$)/);
             if (depBlockMatch) {
               const block = depBlockMatch[1];
               const nameMatch = block.match(/dependency-name:\s*["']?([^"'\n]+)["']?/);
-              if (nameMatch && pkg === 'Unknown') pkg = nameMatch[1].trim();
+              if (nameMatch && (pkg === 'Unknown' || !pkg)) pkg = nameMatch[1].trim();
             }
 
             // Inisialisasi variabel penampung data
@@ -77,7 +80,9 @@ jobs:
             let vulnRange = 'Unknown';
             let patched = 'None';
 
-            // 2. INVESTIGASI MANDIRI KE GITHUB ADVISORY (VIA PUBLIC FETCH API)
+            // ==========================================
+            // STRATEGI TAMBAHAN 2: Fetch Ganda (Public Advisory API + GitHub REST/GraphQL Fallback)
+            // ==========================================
             if (ghsa !== 'No GHSA') {
               try {
                 console.log(`🔍 Mengambil data kerentanan resmi untuk ${ghsa} via Public API...`);
@@ -108,10 +113,33 @@ jobs:
                   }
                   console.log(`✅ Data berhasil diamankan dari Public API.`);
                 } else {
-                  console.log(`⚠️ Public API ditolak (Status: ${advResponse.status}). Menggunakan data PR.`);
+                  console.log(`⚠️ Public API ditolak (Status: ${advResponse.status}). Mencoba metode investigasi cadangan...`);
                 }
               } catch (apiError) {
-                console.log(`⚠️ Gagal fetch API (${apiError.message}). Menggunakan data PR.`);
+                console.log(`⚠️ Gagal fetch Public API (${apiError.message}).`);
+              }
+            }
+
+            // ==========================================
+            // STRATEGI TAMBAHAN 3: Fallback ke GitHub Security Advisory Database (Jika GHSA tidak ditemukan di teks PR)
+            // ==========================================
+            if (severity === 'UNKNOWN' && botType === 'Dependabot') {
+              try {
+                console.log(`🔍 Melakukan investigasi mendalam metadata PR Dependabot...`);
+                const prComments = await github.rest.issues.listComments({
+                  owner, repo, issue_number: parseInt(process.env.PR_NUMBER)
+                });
+                // Mencari petunjuk tambahan dari komentar bot Dependabot jika ada
+                for (const comment of prComments.data) {
+                  const bodyText = comment.body;
+                  const foundGhsa = bodyText.match(/(GHSA-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4})/i);
+                  if (foundGhsa && ghsa === 'No GHSA') {
+                    ghsa = foundGhsa[1].toUpperCase();
+                    console.log(`💡 Menemukan GHSA ID dari komentar Dependabot: ${ghsa}`);
+                  }
+                }
+              } catch (e) {
+                console.log(`⚠️ Gagal memindai komentar tambahan: ${e.message}`);
               }
             }
 
