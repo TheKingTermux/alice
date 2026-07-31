@@ -71,7 +71,7 @@ jobs:
             // Inisialisasi variabel penampung data akurat dari API Advisory
             let severity = 'UNKNOWN';
             let cvss = 'N/A';
-            let title = `Security Update: ${pkg} (${ghsa})`;
+            let title = `Security: ${severity} - ${pkg} (${ghsa} / ${cve})`;
             let summaryDesc = `${botType} security update detected.`;
             let cweList = 'N/A';
             let vulnRange = 'Unknown';
@@ -137,6 +137,9 @@ jobs:
               severityLabel = 'High';
             } else if (severity === 'MODERATE') {
               severityLabel = 'Moderate';
+            } else {
+              severityLabel = 'Low';
+              severity = 'LOW';
             }
             issueLabels.push(severityLabel);
 
