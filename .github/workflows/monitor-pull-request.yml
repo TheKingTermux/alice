@@ -82,9 +82,11 @@ jobs:
           
           if [ "$EVENT_NAME" = "pull_request" ]; then
             if [ "$ACTION" = "synchronize" ]; then
+              echo "COLOR=15844367" >> $GITHUB_ENV # Kuning (Pembaruan)
               echo "TITLE=🔄 Pembaruan Dokumen Kontrak: Amandemen Baru Masuk" >> $GITHUB_ENV
               echo "DESC=Mitra bisnis kita baru saja mengirimkan lembar amandemen kodingan baru ke dalam proposal ini. Jade Chamber akan langsung menghitung ulang nilai aset dan memeriksa statistik perubahan terbarunya." >> $GITHUB_ENV
             elif [ "$ACTION" = "opened" ]; then
+              echo "COLOR=3447003" >> $GITHUB_ENV # Biru (Baru)
               if [ $INDEX -eq 0 ]; then
                 echo "TITLE=📜 Proposal Kontrak Kerja Baru Tiba" >> $GITHUB_ENV
                 echo "DESC=Sebuah draf penggabungan kode baru telah diajukan ke Jade Chamber. Jika proposal investasi baris kode ini menguntungkan stabilitas proyek, saya akan segera menandatanganinya." >> $GITHUB_ENV
@@ -98,9 +100,11 @@ jobs:
             elif [ "$ACTION" = "closed" ]; then
               IS_MERGED="${{ github.event.pull_request.merged }}"
               if [ "$IS_MERGED" = "true" ]; then
+                echo "COLOR=3066993" >> $GITHUB_ENV # Hijau (Merged)
                 echo "TITLE=🤝 Kontrak Disetujui dan Disahkan" >> $GITHUB_ENV
                 echo "DESC=Kesepakatan telah dicapai! Draf proposal ini resmi digabungkan ke dalam cabang utama. Kerja sama yang sangat menguntungkan." >> $GITHUB_ENV
               else
+                echo "COLOR=15158332" >> $GITHUB_ENV # Merah (Closed/Ditolak)
                 echo "TITLE=❌ Proposal Kontrak Ditolak" >> $GITHUB_ENV
                 echo "DESC=Setelah pertimbangan yang matang di Jade Chamber, investasi kode ini dinilai tidak membawa keuntungan bagi kestabilan proyek. Berkas dibatalkan." >> $GITHUB_ENV
               fi
@@ -109,17 +113,21 @@ jobs:
           elif [ "$EVENT_NAME" = "pull_request_review" ]; then
             REVIEW_STATE="${{ github.event.review.state }}"
             if [ "$REVIEW_STATE" = "approved" ]; then
+              echo "COLOR=3066993" >> $GITHUB_ENV # Hijau (Approved)
               echo "TITLE=✅ Audit Selesai: Kontrak Mendapat Sertifikasi Approved" >> $GITHUB_ENV
               echo "DESC=Kabar baik. Salah satu pengawas keuangan senior kita telah memeriksa struktur amandemen ini dan memberikan tanda sepakat. Jalan menuju merger semakin terbuka lebar." >> $GITHUB_ENV
             elif [ "$REVIEW_STATE" = "changes_requested" ]; then
+              echo "COLOR=15158332" >> $GITHUB_ENV # Merah (Changes Requested)
               echo "TITLE=⚠️ Amandemen Ditolak Sementara: Changes Requested" >> $GITHUB_ENV
               echo "DESC=Tunggu dulu. Ditemukan poin audit yang cacat atau berisiko merugikan sistem. Dokumen dikembalikan ke meja pemohon untuk segera direvisi sesuai instruksi." >> $GITHUB_ENV
             else
+              echo "COLOR=15844367" >> $GITHUB_ENV # Kuning (Commented Review)
               echo "TITLE=💬 Ulasan Catatan Berkas Transaksi" >> $GITHUB_ENV
               echo "DESC=Sebuah tinjauan umum tanpa putusan final baru saja ditambahkan pada lembar draf kerja ini. Evaluasi umum sedang berlangsung." >> $GITHUB_ENV
             fi
 
           else
+            echo "COLOR=15844367" >> $GITHUB_ENV # Kuning (Komentar Tambahan)
             if [ $INDEX -eq 0 ]; then
               echo "TITLE=✍️ Catatan Koreksi di Lembar Lampiran" >> $GITHUB_ENV
               echo "DESC=Seseorang menambahkan tinta catatan kecil pada baris klausul dokumen kita. Mari kita teliti pesan koreksinya agar transaksi ini berjalan tanpa cacat." >> $GITHUB_ENV
@@ -171,7 +179,7 @@ jobs:
           jq -n \
             --arg title "$TITLE" \
             --arg desc "$DESC" \
-            --arg color "16239121" \
+            --arg color "${COLOR:-3447003}" \
             --arg repo_name "$GITHUB_REPOSITORY" \
             --arg repo_url "$REPO_URL" \
             --arg doc_title "$PR_TITLE" \
