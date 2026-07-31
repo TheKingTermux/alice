@@ -68,57 +68,66 @@ jobs:
               if (nameMatch && pkg === 'Unknown') pkg = nameMatch[1].trim();
             }
 
-            // Inisialisasi variabel penampung data akurat dari API Advisory
+            // Inisialisasi variabel penampung data
             let severity = 'UNKNOWN';
             let cvss = 'N/A';
-            let title = `Security: ${severity} - ${pkg} (${ghsa} / ${cve})`;
+            let title = `Security Update: ${pkg} (${ghsa})`; // Fallback awal
             let summaryDesc = `${botType} security update detected.`;
             let cweList = 'N/A';
             let vulnRange = 'Unknown';
             let patched = 'None';
 
-            // 2. INVESTIGASI MANDIRI KE GITHUB ADVISORY API
+            // 2. INVESTIGASI MANDIRI KE GITHUB ADVISORY (VIA PUBLIC FETCH API)
             if (ghsa !== 'No GHSA') {
               try {
-                console.log(`🔍 Mengambil data kerentanan resmi untuk ${ghsa} dari GitHub Advisory Database...`);
-                const advisoryResponse = await github.rest.securityAdvisories.getGlobalAdvisory({
-                  ghsa_id: ghsa
-                });
+                console.log(`🔍 Mengambil data kerentanan resmi untuk ${ghsa} via Public API...`);
+                const advResponse = await fetch(`https://api.github.com/advisories/${ghsa}`);
                 
-                const advData = advisoryResponse.data;
-                
-                // Ambil data dari API
-                if (advData.summary) title = advData.summary;
-                if (advData.description) summaryDesc = advData.description;
-                if (advData.severity) severity = advData.severity.toUpperCase();
-                if (advData.cvss && advData.cvss.score) cvss = advData.cvss.score.toString();
-                if (advData.cve_id) cve = advData.cve_id;
-
-                if (advData.cwes && advData.cwes.length > 0) {
-                  cweList = advData.cwes.map(c => `${c.cwe_id} (${c.name})`).join(', ');
-                }
-
-                if (advData.vulnerabilities && advData.vulnerabilities.length > 0) {
-                  let ranges = [];
-                  let fixes = [];
+                if (advResponse.ok) {
+                  const advData = await advResponse.json();
                   
-                  advData.vulnerabilities.forEach(v => {
-                    if (v.vulnerable_version_range) ranges.push(v.vulnerable_version_range);
-                    if (v.first_patched_version) fixes.push(v.first_patched_version);
-                  });
+                  if (advData.summary) title = advData.summary;
+                  if (advData.description) summaryDesc = advData.description;
+                  if (advData.severity) severity = advData.severity.toUpperCase();
+                  if (advData.cvss && advData.cvss.score) cvss = advData.cvss.score.toString();
+                  if (advData.cve_id) cve = advData.cve_id;
 
-                  if (ranges.length > 0) vulnRange = ranges.join('\n  - ');
-                  if (fixes.length > 0) patched = fixes.join(' / ');
+                  if (advData.cwes && advData.cwes.length > 0) {
+                    cweList = advData.cwes.map(c => `${c.cwe_id} (${c.name})`).join(', ');
+                  }
+
+                  if (advData.vulnerabilities && advData.vulnerabilities.length > 0) {
+                    let ranges = [];
+                    let fixes = [];
+                    advData.vulnerabilities.forEach(v => {
+                      if (v.vulnerable_version_range) ranges.push(v.vulnerable_version_range);
+                      if (v.first_patched_version) fixes.push(v.first_patched_version);
+                    });
+                    if (ranges.length > 0) vulnRange = ranges.join('\n  - ');
+                    if (fixes.length > 0) patched = fixes.join(' / ');
+                  }
+                  console.log(`✅ Data berhasil diamankan dari Public API.`);
+                } else {
+                  console.log(`⚠️ Public API ditolak (Status: ${advResponse.status}). Menggunakan data PR.`);
                 }
               } catch (apiError) {
-                console.log(`⚠️ Gagal mengambil data Global Advisory (${apiError.message}). Menggunakan data fallback teks PR.`);
+                console.log(`⚠️ Gagal fetch API (${apiError.message}). Menggunakan data PR.`);
               }
             }
 
-            // Pengecekan tingkat keparahan cadangan jika API gagal merespons
+            // Pengecekan tingkat keparahan cadangan jika API beneran mati
             if (severity === 'UNKNOWN') {
               const severityMatch = prBody.match(/\*\*Severity:\*\*\s*(\w+)/i) || prBody.match(/Severity:\s*(\w+)/i);
               if (severityMatch) severity = severityMatch[1].toUpperCase();
+            }
+
+            // Fallback Judul Darurat (Jika API gagal dan judul masih bawaan)
+            if (title.startsWith('Security Update:')) {
+               if (severity !== 'UNKNOWN' && cve !== 'No CVE') {
+                 title = `Security: ${severity} - ${pkg} (${ghsa} / ${cve})`;
+               } else {
+                 title = `Security Advisory: ${pkg} (${ghsa})`;
+               }
             }
 
             // FILTER ANTI-SPAM
@@ -150,7 +159,7 @@ jobs:
             );
             const existing = issues.find(i => i.title === title);
 
-            // 3. STRUKTUR FORMAT BARU PADA BODY ISSUE (Rata Kiri)
+            // 3. STRUKTUR FORMAT PADA BODY ISSUE (Rata Kiri)
             const body = `## 🛡️ Security Vulnerability (from ${botType} PR #${process.env.PR_NUMBER})
 
             ### Description
