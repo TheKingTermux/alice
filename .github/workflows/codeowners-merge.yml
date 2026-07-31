@@ -30,6 +30,3 @@ jobs:
           GITHUB_TOKEN: ${{ steps.bot_token.outputs.token }}
         with:
           path: '.github/CODEOWNERS' # Ensure this matches the location of your CODEOWNERS file
-          author_name: TheKingTermux
-          author_email: 50316075+TheKingTermux@users.noreply.github.com
-          message: "Otomatis: Merge Pull Request"
