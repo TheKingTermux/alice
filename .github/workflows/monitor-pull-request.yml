@@ -21,7 +21,7 @@ jobs:
     if: ${{ github.event_name != 'issue_comment' || github.event.issue.pull_request != null }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Ambil Data Real-time PR dari GitHub API
         id: fetch_pr
