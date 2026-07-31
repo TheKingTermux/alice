@@ -2,9 +2,7 @@ name: Monitor Semua Workflow
 on:
   workflow_run:
     workflows: 
-      - "CodeQL"
       - "Codeowners merging"
-      - "Dependabot Updates"
       - "Monitor Pull Requests"
       - "Monitor Issues"
       - "PR Merge Watcher"
