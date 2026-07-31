@@ -192,7 +192,8 @@ jobs:
                   title,
                   body,
                   labels: issueLabels,
-                  assignees: ['TheKingTermux']
+                  assignees: ['TheKingTermux'],
+                  milestone: 1
                 });
                 issueNumber = createdIssue.data.number;
                 console.log(`Created issue #${issueNumber}: ${title}`);
@@ -201,7 +202,8 @@ jobs:
                   owner, repo,
                   issue_number: existing.number,
                   body,
-                  state: 'open'
+                  state: 'open',
+                  milestone: 1
                 });
                 const currentLabels = existing.labels.map(l => l.name);
                 const missingLabels = issueLabels.filter(l => !currentLabels.includes(l));
