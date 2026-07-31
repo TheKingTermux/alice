@@ -9,6 +9,7 @@ on:
       - "Monitor Issues"
       - "PR Merge Watcher"
       - "Security PR"
+      - "Remove Unused Branches"
     types:
       - completed
 
