@@ -11,9 +11,13 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      statuses: read
 
     steps:
-      # 🤖 LANGKAH TAMBAHAN: Generate token khusus dari GitHub App bot pribadi Anda
+      # 🤖 Langkah Generator Token Bot Pribadi (thekingtermux-bot)
       - name: Generate Bot Token
         id: bot_token
         uses: actions/create-github-app-token@v1
@@ -21,12 +25,12 @@ jobs:
           app-id: ${{ secrets.BOT_APP_ID }}
           private-key: ${{ secrets.BOT_PRIVATE_KEY }}
 
-      - uses: actions/checkout@v7
-      
+      - uses: actions/checkout@v6
+
       - name: Run Codeowners merge check
         uses: OSS-Docs-Tools/code-owner-self-merge@1.6.8
         env:
-          # Mengganti GITHUB_TOKEN bawaan dengan token bot pribadi
+          # Memaksa action menggunakan token bot pribadi yang memiliki hak akses penuh
           GITHUB_TOKEN: ${{ steps.bot_token.outputs.token }}
         with:
-          path: '.github/CODEOWNERS' # Ensure this matches the location of your CODEOWNERS file
+          path: '.github/CODEOWNERS'
