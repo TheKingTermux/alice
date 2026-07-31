@@ -23,7 +23,7 @@ jobs:
       # 🤖 LANGKAH TAMBAHAN: Generate token khusus untuk bot Anda
       - name: Generate Bot Token
         id: get_bug_bot_token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.BOT_APP_ID }}
           private-key: ${{ secrets.BOT_PRIVATE_KEY }}
