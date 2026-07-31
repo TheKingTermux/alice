@@ -28,6 +28,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Jeda waktu 10 detik khusus saat PR ditutup/di-merge agar server GitHub matang menyinkronkan status
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.event.action }}" = "closed" ]; then
+            echo "Menunggu 10 detik agar status sinkronisasi merge di server GitHub matang..."
+            sleep 10
+          fi
+
           # 1. Tentukan nomor PR
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             PR_NUM="${{ github.event.pull_request.number }}"
@@ -99,7 +105,7 @@ jobs:
             echo "TITLE=✅ Audit Selesai: Kontrak Mendapat Sertifikasi [#Approved]" >> $GITHUB_ENV
             echo "DESC=Kabar baik. Salah satu pengawas keuangan senior kita telah memeriksa struktur amandemen ini dan memberikan tanda sepakat. Jalan menuju merger semakin terbuka lebar." >> $GITHUB_ENV
 
-          # 2. Baru Cek Merged (Ungu) - Berjalan ketika tombol Merge diklik
+          # 2. Cek Merged (Ungu) - Berjalan ketika tombol Merge diklik (dengan bantuan sleep 10 di atas agar datanya matang)
           elif [ "$PR_IS_MERGED" = "true" ]; then
             echo "COLOR=10181046" >> $GITHUB_ENV # 🟪 Ungu (Merged)
             echo "TITLE=🤝 Kontrak Disetujui dan Disahkan [#Merged]" >> $GITHUB_ENV
