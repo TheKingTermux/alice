@@ -28,12 +28,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Jeda waktu 10 detik khusus saat PR ditutup/di-merge agar server GitHub matang menyinkronkan status
-          if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.event.action }}" = "closed" ]; then
-            echo "Menunggu 10 detik agar status sinkronisasi merge di server GitHub matang..."
-            sleep 10
-          fi
-
           # 1. Tentukan nomor PR
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             PR_NUM="${{ github.event.pull_request.number }}"
