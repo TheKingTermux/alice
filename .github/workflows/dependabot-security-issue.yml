@@ -38,39 +38,19 @@ jobs:
             const author = process.env.PR_AUTHOR || '';
             const botType = author === 'renovate[bot]' ? 'Renovate' : 'Dependabot';
 
-            // Set default parse data
-            let severity = 'UNKNOWN';
-            let ghsa = 'No GHSA';
-            let cve = 'No CVE';
-            let cvss = 'N/A';
-            let vector = 'N/A';
-            let pkg = 'Unknown';
-            let eco = 'Unknown';
-            let vulnRange = 'Unknown';
-            let patched = 'None';
-            let summary = `${botType} security update detected. Merge PR to fix vulnerability.`;
-
-            // Ekstrak indikator keamanan
-            const severityMatch = prBody.match(/\*\*Severity:\*\*\s*(\w+)/i) || prBody.match(/Severity:\s*(\w+)/i) || prBody.match(/severity:\s*(\w+)/i);
-            if (severityMatch) severity = severityMatch[1].toUpperCase();
-
+            // 1. Ekstrak GHSA & CVE ID dasar dari deskripsi PR
             const ghsaMatch = prBody.match(/(GHSA[-a-zA-Z0-9]+)/i);
-            if (ghsaMatch) ghsa = ghsaMatch[1];
+            let ghsa = ghsaMatch ? ghsaMatch[1].toUpperCase() : 'No GHSA';
+            
             const cveMatch = prBody.match(/(CVE-\d{4}-\d+)/i);
-            if (cveMatch) cve = cveMatch[1];
+            let cve = cveMatch ? cveMatch[1].toUpperCase() : 'No CVE';
 
-            // 2. FILTER ANTI-SPAM: Cegah pembuatan Issue jika ini cuma PR update versi biasa (bukan keamanan)
-            if (botType === 'Dependabot' && severity === 'UNKNOWN' && ghsa === 'No GHSA' && cve === 'No CVE') {
-              console.log('✅ PR Dependabot ini adalah update versi normal (tidak ada kebocoran/kerentanan). Melewati pembuatan Issue...');
-              return; // Menghentikan eksekusi script sampai di sini
-            }
-
-            // Ekstrak nama paket (Mendukung format "chore(deps): bump axios" atau "Update dependency pm2")
+            // Deteksi nama paket kerentanan
+            let pkg = 'Unknown';
             const pkgMatch = process.env.PR_TITLE.match(/(?:bumps?|updates?)\s+(?:dependency\s+)?([^\s]+)/i) || 
                              prBody.match(/(?:bumps?|updates?)\s+(?:dependency\s+)?([^\s]+)\s+from/i);
             if (pkgMatch) pkg = pkgMatch[1];
 
-            // Pencarian nama paket lapis kedua dari blok updated-dependencies Dependabot
             const depBlockMatch = prBody.match(/updated-dependencies:([\s\S]*?)(?=\n---|$)/);
             if (depBlockMatch) {
               const block = depBlockMatch[1];
@@ -78,39 +58,89 @@ jobs:
               if (nameMatch && pkg === 'Unknown') pkg = nameMatch[1].trim();
             }
 
-            // Ekstrak versi kerentanan
-            const rangeMatch = prBody.match(/(?:Affected|vulnerable)\s+versions?[:\s]*([^\n]+)/i);
-            if (rangeMatch) vulnRange = rangeMatch[1].trim();
-            const patchedMatch = prBody.match(/(?:Patched|fixed)\s+in?[:\s]*([^\n]+)/i);
-            if (patchedMatch) patched = patchedMatch[1].trim();
+            // Inisialisasi variabel penampung data akurat dari API Advisory
+            let severity = 'UNKNOWN';
+            let cvss = 'N/A';
+            let summary = `${botType} security update detected.`;
+            let cweList = 'N/A';
+            let vulnRange = 'Unknown';
+            let patched = 'None';
 
-            // Labels severity
+            // 2. INVESTIGASI MANDIRI KE GITHUB ADVISORY API
+            if (ghsa !== 'No GHSA') {
+              try {
+                console.log(`🔍 Mengambil data kerentanan resmi untuk ${ghsa} dari GitHub Advisory Database...`);
+                const advisoryResponse = await github.rest.securityAdvisories.getGlobalAdvisory({
+                  ghsa_id: ghsa
+                });
+                
+                const advData = advisoryResponse.data;
+                
+                // Ambil data keparahan, deskripsi singkat, dan skor CVSS resmi
+                if (advData.severity) severity = advData.severity.toUpperCase();
+                if (advData.summary) summary = advData.summary;
+                if (advData.cvss && advData.cvss.score) cvss = advData.cvss.score.toString();
+                if (advData.cve_id) cve = advData.cve_id;
+
+                // Ambil daftar kelemahan CWE
+                if (advData.cwes && advData.cwes.length > 0) {
+                  cweList = advData.cwes.map(c => `${c.cwe_id} (${c.name})`).join(', ');
+                }
+
+                // Ambil daftar versi terdampak & versi perbaikan secara dinamis
+                if (advData.vulnerabilities && advData.vulnerabilities.length > 0) {
+                  let ranges = [];
+                  let fixes = [];
+                  
+                  advData.vulnerabilities.forEach(v => {
+                    if (v.vulnerable_version_range) ranges.push(v.vulnerable_version_range);
+                    if (v.first_patched_version) fixes.push(v.first_patched_version);
+                  });
+
+                  if (ranges.length > 0) vulnRange = ranges.join('\n              - ');
+                  if (fixes.length > 0) patched = fixes.join(' / ');
+                }
+              } catch (apiError) {
+                console.log(`⚠️ Gagal mengambil data Global Advisory (${apiError.message}). Menggunakan data fallback teks PR.`);
+              }
+            }
+
+            // Pengecekan tingkat keparahan cadangan jika API gagal merespons
+            if (severity === 'UNKNOWN') {
+              const severityMatch = prBody.match(/\*\*Severity:\*\*\s*(\w+)/i) || prBody.match(/Severity:\s*(\w+)/i);
+              if (severityMatch) severity = severityMatch[1].toUpperCase();
+            }
+
+            // FILTER ANTI-SPAM: Jika bukan PR keamanan, lewati pembuatan Issue
+            if (botType === 'Dependabot' && severity === 'UNKNOWN' && ghsa === 'No GHSA' && cve === 'No CVE') {
+              console.log('✅ PR Dependabot ini adalah update versi normal. Melewati pembuatan Issue...');
+              return; 
+            }
+
+            // Normalisasi & Pembuatan Label Tingkat Keparahan
             let issueLabels = ['Security', 'Auto Create Issues', 'dependencies'];
-            let severityLabel = 'Low'; 
-            severity = 'LOW'; 
+            let severityLabel = 'Low';
+            
             if (severity === 'CRITICAL') {
               severityLabel = 'Critical';
-              severity = 'CRITICAL';
             } else if (severity === 'HIGH') {
               severityLabel = 'High';
-              severity = 'HIGH';
             } else if (severity === 'MODERATE') {
               severityLabel = 'Moderate';
-              severity = 'MODERATE';
             }
             issueLabels.push(severityLabel);
 
-            // Title issue
+            // Judul Issue Resmi
             const title = `Security: ${severity} - ${pkg} (${ghsa} / ${cve})`;
 
-            // Cari existing issue
+            // Cari Issue yang sudah ada di repositori
             const issues = await github.paginate(
               github.rest.issues.listForRepo,
               { owner, repo, state: 'all', labels: 'Auto Create Issues', per_page: 100 }
             );
             const existing = issues.find(i => i.title === title);
 
-            // Susun Body Issue (Otomatis menyesuaikan nama bot dan url)
+            // 3. STRUKTUR FORMAT BARU PADA BODY ISSUE (MEMPERBAIKI CHECKBOX DAN PERTANYAAN ANDA)
             const body = `
               ## 🛡️ Security Vulnerability (from ${botType} PR #${process.env.PR_NUMBER})
 
@@ -126,24 +156,28 @@ jobs:
               ### Severity Score
               ${cvss} / 10
 
-              ### CVSS Vector
-              ${vector}
+              ### Identifiers
+              - **GHSA ID:** ${ghsa}
+              - **CVE ID:** ${cve}
+
+              ### Weaknesses
+              - ${cweList}
 
               ### Affected
               - **Package:** ${pkg}
-              - **Ecosystem:** ${eco}
-              - **Vulnerable versions:** ${vulnRange}
-              - **Patched version:** ${patched}
+              - **Affected versions:**
+                - ${vulnRange}
+              - **Patched versions:** ${patched}
 
               ### References
               - Advisory: https://github.com/advisories/${ghsa}
               - PR: ${process.env.PR_URL}
-              - Alert Source: https://github.com/${owner}/${repo}/security/${botType.toLowerCase()}
 
               ---
               _Auto-generated from ${botType} security PR. Fix by merging PR #${process.env.PR_NUMBER}._
             `.replace(/^ +/gm, '');
 
+            // Eksekusi Pembuatan atau Pembaruan Tiket Issue
             if (payload.action === 'opened' || payload.action === 'synchronize' || payload.action === 'reopened') {
               if (!existing) {
                 await github.rest.issues.create({
@@ -151,9 +185,9 @@ jobs:
                   title,
                   body,
                   labels: issueLabels,
-                  assignees: ['TheKingTermux'] // Sesuaikan assignee jika perlu
+                  assignees: ['TheKingTermux']
                 });
-                console.log(`Created issue: ${title} with labels ${issueLabels.join(', ')}`);
+                console.log(`Created issue: ${title}`);
               } else {
                 await github.rest.issues.update({
                   owner, repo,
