@@ -11,14 +11,17 @@ permissions:
 
 jobs:
   process-dependabot-security-pr:
-    if: github.event.pull_request.user.login == 'dependabot[bot]' && contains(github.event.pull_request.title, 'Bumps')
+    # 1. PERBAIKAN IF: Ganti 'Bumps' menjadi 'Bump' (atau hapus saja jika ingin menangkap semua PR dependabot)
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && contains(github.event.pull_request.title, 'Bump')
     runs-on: ubuntu-latest
     steps:
+      # 2. PERBAIKAN VERSI: Ganti v6 ke v4
       - name: Checkout repo
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
+      # 3. PERBAIKAN VERSI: Ganti v8 ke v7
       - name: Extract info & Create/Update Issue
-        uses: actions/github-script@v8
+        uses: actions/github-script@v7
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_TITLE: ${{ github.event.pull_request.title }}
@@ -53,7 +56,8 @@ jobs:
             const cveMatch = prBody.match(/(CVE-\d{4}-\d+)/i);
             if (cveMatch) cve = cveMatch[1];
 
-            const pkgMatch = process.env.PR_TITLE.match(/Bumps\s+([^\s]+)/) || prBody.match(/Bumps\s+([^\s]+)\s+from/);
+            // 4. PERBAIKAN REGEX: Gunakan 'Bumps?' agar bisa membaca 'Bump' maupun 'Bumps'
+            const pkgMatch = process.env.PR_TITLE.match(/Bumps?\s+([^\s]+)/i) || prBody.match(/Bumps?\s+([^\s]+)\s+from/i);
             if (pkgMatch) pkg = pkgMatch[1];
 
             const depBlockMatch = prBody.match(/updated-dependencies:([\s\S]*?)(?=\n---|$)/);
@@ -94,7 +98,7 @@ jobs:
             );
             const existing = issues.find(i => i.title === title);
 
-            // Body issue (dengan indentasi agar aman dari YAML parser)
+            // Body issue
             const body = `
               ## 🛡️ Security Vulnerability (from Dependabot PR #${process.env.PR_NUMBER})
 
@@ -126,7 +130,7 @@ jobs:
 
               ---
               _Auto-generated from Dependabot security PR. Fix by merging PR #${process.env.PR_NUMBER}._
-            `.trim();
+            `.replace(/^ +/gm, ''); // Membersihkan spasi kosong di awal baris agar format Markdown rapi
 
             if (payload.action === 'opened' || payload.action === 'synchronize' || payload.action === 'reopened') {
               if (!existing) {
