@@ -25,28 +25,35 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Hapus Branch yang Tidak Terpakai di PR (Kecuali Main & Tester)
+      - name: Pembersihan Dahan Irminsul oleh Nahida
         env:
           GITHUB_TOKEN: ${{ steps.bot_token.outputs.token || secrets.GITHUB_TOKEN }}
+          DISCORD_URL: ${{ secrets.DISCORD_WEBHOOK_PRUNE }}
         run: |
-          echo "=========================================="
-          echo " Memulai pembersihan branch tidak terpakai"
-          echo "=========================================="
+          echo "🌿 =========================================="
+          echo " 🍃 Terminal Kesadaran Irminsul: Aktif"
+          echo " 🌸 'Halo! Biar aku bantu rapikan ingatan dan"
+          echo "    dahan-dahan kode yang sudah layu ya~'"
+          echo "============================================"
 
           # 1. Ambil daftar branch remote terbaru
           git fetch --prune
 
           # 2. Ambil daftar branch yang saat ini memiliki PR berstatus 'open' dari GitHub API
-          echo "Mengambil daftar branch yang memiliki PR aktif..."
+          echo "🔍 Menghubungkan kesadaran untuk memindai PR yang masih terbuka..."
           OPEN_PR_BRANCHES=$(curl -s \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
             "https://api.github.com/repos/${{ github.repository }}/pulls?state=open&per_page=100" \
             | jq -r '.[].head.ref')
 
-          echo "Branch dengan PR aktif:"
+          echo "Draf kontrak (PR aktif) yang ditemukan di dahan utama:"
           echo "$OPEN_PR_BRANCHES"
           echo "------------------------------------------"
+
+          # Variabel untuk mencatat hasil pembersihan buat laporan Discord
+          DELETED_COUNT=0
+          DELETED_LIST=""
 
           # 3. Loop melalui semua branch remote (mengabaikan prefix 'origin/')
           for remote_branch in $(git branch -r | grep -v 'HEAD' | sed 's|origin/||'); do
@@ -55,7 +62,7 @@ jobs:
 
             # ATURAN AMAN: Jangan pernah hapus branch main, tester, atau branch saat ini
             if [ "$branch" = "main" ] || [ "$branch" = "tester" ]; then
-              echo "🔒 Melindungi branch utama/penting: $branch"
+              echo "🌱 Melindungi dahan suci sumber kehidupan: $branch"
               continue
             fi
 
@@ -67,13 +74,55 @@ jobs:
 
             # Jika branch tidak masuk dalam daftar PR open, eksekusi penghapusan
             if [ "$is_in_open_pr" = "false" ]; then
-              echo "🗑️ Branch '$branch' tidak memiliki PR aktif. Menghapus..."
-              git push origin --delete "$branch" || echo "Gagal menghapus branch $branch (mungkin sudah terhapus)."
+              echo "✂️ Dahan '$branch' kehilangan ikatan dengan draf aktif. Memangkas memori lama..."
+              if git push origin --delete "$branch"; then
+                DELETED_COUNT=$((DELETED_COUNT + 1))
+                DELETED_LIST="$DELETED_LIST• \`$branch\`"$'\n'
+              else
+                echo "Gagal membersihkan dahan $branch (mungkin sudah gugur sebelumnya)."
+              fi
             else
-              echo "🛡️ Branch '$branch' dilewati karena masih memiliki PR aktif yang terbuka."
+              echo "🍃 Dahan '$branch' dibiarkan tumbuh karena masih merajut kontrak aktif (PR Open)."
             fi
           done
 
-          echo "=========================================="
-          echo " Pembersihan branch selesai dijalankan."
-          echo "=========================================="
+          echo "============================================"
+          echo "✨ Pembersihan Irminsul selesai!"
+          echo "🌸 'Semua memori yang tidak berguna telah dibersihkan.'"
+          echo "============================================"
+
+          # 4. Kirim Laporan ke Discord jika Webhook URL tersedia
+          if [ -n "$DISCORD_URL" ]; then
+            if [ $DELETED_COUNT -eq 0 ]; then
+              DESC="🌸 **Laporan Pemangkasan Irminsul**\n\nSemua dahan kode masih bertunas dengan baik! Tidak ada branch tak terpakai yang perlu dipangkas kali ini."
+              FIELD_VAL="*Tidak ada branch yang dihapus.*"
+            else
+              DESC="🌸 **Laporan Pemangkasan Irminsul**\n\nBerhasil memangkas **$DELETED_COUNT** dahan/branch mati yang tidak terikat pada PR aktif."
+              FIELD_VAL="$DELETED_LIST"
+            fi
+
+            jq -n \
+              --arg username "Lesser Lord Kusanali" \
+              --arg title "🌿 Pembersihan Dahan Irminsul Berkala" \
+              --arg desc "$DESC" \
+              --arg deleted_val "$FIELD_VAL" \
+              --arg repo "${{ github.repository }}" \
+              '{
+                username: $username,
+                embeds: [{
+                  title: $title,
+                  description: $desc,
+                  color: 5832732,
+                  fields: [
+                    { name: "📁 Repositori", value: ("`" + $repo + "`"), inline: false },
+                    { name: "✂️ Daftar Branch yang Dipangkas", value: $deleted_val, inline: false }
+                  ],
+                  footer: { text: "💎 'Pengetahuan adalah kekuatan, bersihkan memori yang membebani.'" }
+                }]
+              }' > discord_prune_payload.json
+
+            curl -H "Content-Type: application/json" -X POST -d @discord_prune_payload.json "$DISCORD_URL"
+            echo "📬 Laporan berhasil dikirim ke saluran Discord!"
+          else
+            echo "⚠️ DISCORD_WEBHOOK_PRUNE belum diisi di Secrets, melewati pengiriman notifikasi."
+          fi
