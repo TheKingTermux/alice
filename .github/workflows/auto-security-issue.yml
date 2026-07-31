@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # 🤖 LANGKAH TAMBAHAN: Generate token khusus untuk bot Anda
       - name: Generate Bot Token
