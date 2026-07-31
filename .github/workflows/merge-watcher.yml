@@ -39,7 +39,7 @@ jobs:
           IS_MERGED="false"
           PR_DATA=""
           
-          # 2. SISTEM RETRY LOOP: Cek API berkala (maksimal 3 kali percobaan, jeda 5 detik)
+          # 2. SISTEM RETRY LOOP: Cek API berkala (maksimal 3 kali percobaan, jeda 10 detik)
           for i in {1..3}; do
             echo "Percobaan ke-$i: Mengambil data dari API GitHub..."
             PR_DATA=$(curl -s \
@@ -55,8 +55,8 @@ jobs:
               break
             fi
 
-            echo "Status belum sinkron, menunggu 5 detik sebelum mencoba lagi..."
-            sleep 5
+            echo "Status belum sinkron, menunggu 10 detik sebelum mencoba lagi..."
+            sleep 10
           done
 
           COMMITS=$(echo "$PR_DATA" | jq -r '.commits // "1"')
