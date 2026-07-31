@@ -1,4 +1,4 @@
-name: 🛡️ Dependabot Security PR → Auto Create/Update Issue
+name: 🛡️ Security PR → Auto Create/Update Issue
 
 on:
   pull_request:
@@ -10,16 +10,16 @@ permissions:
   pull-requests: read
 
 jobs:
-  process-dependabot-security-pr:
-    # 1. PERBAIKAN IF: Ganti 'Bumps' menjadi 'Bump' (atau hapus saja jika ingin menangkap semua PR dependabot)
-    if: github.event.pull_request.user.login == 'dependabot[bot]' && contains(github.event.pull_request.title, 'Bump')
+  process-security-pr:
+    # 1. GERBANG DIBUKA: Terima semua PR Dependabot, ATAU PR Renovate yang judulnya ada 'security'
+    if: >
+      github.event.pull_request.user.login == 'dependabot[bot]' ||
+      (github.event.pull_request.user.login == 'renovate[bot]' && contains(github.event.pull_request.title, 'security'))
     runs-on: ubuntu-latest
     steps:
-      # 2. PERBAIKAN VERSI: Ganti v6 ke v4
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # 3. PERBAIKAN VERSI: Ganti v8 ke v7
       - name: Extract info & Create/Update Issue
         uses: actions/github-script@v7
         env:
@@ -27,6 +27,7 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         with:
           script: |
             const { context, github } = require('@actions/github');
@@ -35,8 +36,10 @@ jobs:
             const repo = context.repo.repo;
 
             const prBody = process.env.PR_BODY || payload.pull_request.body || '';
+            const author = process.env.PR_AUTHOR || '';
+            const botType = author === 'renovate[bot]' ? 'Renovate' : 'Dependabot';
 
-            // Parse data
+            // Set default parse data
             let severity = 'UNKNOWN';
             let ghsa = 'No GHSA';
             let cve = 'No CVE';
@@ -46,8 +49,9 @@ jobs:
             let eco = 'Unknown';
             let vulnRange = 'Unknown';
             let patched = 'None';
-            let summary = 'Dependabot security update detected. Merge PR to fix vulnerability.';
+            let summary = `${botType} security update detected. Merge PR to fix vulnerability.`;
 
+            // Ekstrak indikator keamanan
             const severityMatch = prBody.match(/\*\*Severity:\*\*\s*(\w+)/i) || prBody.match(/Severity:\s*(\w+)/i) || prBody.match(/severity:\s*(\w+)/i);
             if (severityMatch) severity = severityMatch[1].toUpperCase();
 
@@ -56,10 +60,18 @@ jobs:
             const cveMatch = prBody.match(/(CVE-\d{4}-\d+)/i);
             if (cveMatch) cve = cveMatch[1];
 
-            // 4. PERBAIKAN REGEX: Gunakan 'Bumps?' agar bisa membaca 'Bump' maupun 'Bumps'
-            const pkgMatch = process.env.PR_TITLE.match(/Bumps?\s+([^\s]+)/i) || prBody.match(/Bumps?\s+([^\s]+)\s+from/i);
+            // 2. FILTER ANTI-SPAM: Cegah pembuatan Issue jika ini cuma PR update versi biasa (bukan keamanan)
+            if (botType === 'Dependabot' && severity === 'UNKNOWN' && ghsa === 'No GHSA' && cve === 'No CVE') {
+              console.log('✅ PR Dependabot ini adalah update versi normal (tidak ada kebocoran/kerentanan). Melewati pembuatan Issue...');
+              return; // Menghentikan eksekusi script sampai di sini
+            }
+
+            // Ekstrak nama paket (Mendukung format "chore(deps): bump axios" atau "Update dependency pm2")
+            const pkgMatch = process.env.PR_TITLE.match(/(?:bumps?|updates?)\s+(?:dependency\s+)?([^\s]+)/i) || 
+                             prBody.match(/(?:bumps?|updates?)\s+(?:dependency\s+)?([^\s]+)\s+from/i);
             if (pkgMatch) pkg = pkgMatch[1];
 
+            // Pencarian nama paket lapis kedua dari blok updated-dependencies Dependabot
             const depBlockMatch = prBody.match(/updated-dependencies:([\s\S]*?)(?=\n---|$)/);
             if (depBlockMatch) {
               const block = depBlockMatch[1];
@@ -67,6 +79,7 @@ jobs:
               if (nameMatch && pkg === 'Unknown') pkg = nameMatch[1].trim();
             }
 
+            // Ekstrak versi kerentanan
             const rangeMatch = prBody.match(/(?:Affected|vulnerable)\s+versions?[:\s]*([^\n]+)/i);
             if (rangeMatch) vulnRange = rangeMatch[1].trim();
             const patchedMatch = prBody.match(/(?:Patched|fixed)\s+in?[:\s]*([^\n]+)/i);
@@ -74,8 +87,8 @@ jobs:
 
             // Labels severity
             let issueLabels = ['Security', 'Auto Create Issues', 'dependencies'];
-            let severityLabel = 'Low'; // fallback
-            severity = 'LOW'; // default untuk checkbox
+            let severityLabel = 'Low'; 
+            severity = 'LOW'; 
             if (severity === 'CRITICAL') {
               severityLabel = 'Critical';
               severity = 'CRITICAL';
@@ -98,9 +111,9 @@ jobs:
             );
             const existing = issues.find(i => i.title === title);
 
-            // Body issue
+            // Susun Body Issue (Otomatis menyesuaikan nama bot dan url)
             const body = `
-              ## 🛡️ Security Vulnerability (from Dependabot PR #${process.env.PR_NUMBER})
+              ## 🛡️ Security Vulnerability (from ${botType} PR #${process.env.PR_NUMBER})
 
               ### Description
               ${summary}
@@ -126,11 +139,11 @@ jobs:
               ### References
               - Advisory: https://github.com/advisories/${ghsa}
               - PR: ${process.env.PR_URL}
-              - Dependabot Alert: https://github.com/${owner}/${repo}/security/dependabot
+              - Alert Source: https://github.com/${owner}/${repo}/security/${botType.toLowerCase()}
 
               ---
-              _Auto-generated from Dependabot security PR. Fix by merging PR #${process.env.PR_NUMBER}._
-            `.replace(/^ +/gm, ''); // Membersihkan spasi kosong di awal baris agar format Markdown rapi
+              _Auto-generated from ${botType} security PR. Fix by merging PR #${process.env.PR_NUMBER}._
+            `.replace(/^ +/gm, '');
 
             if (payload.action === 'opened' || payload.action === 'synchronize' || payload.action === 'reopened') {
               if (!existing) {
@@ -139,7 +152,7 @@ jobs:
                   title,
                   body,
                   labels: issueLabels,
-                  assignees: ['TheKingTermux']
+                  assignees: ['TheKingTermux'] // Sesuaikan assignee jika perlu
                 });
                 console.log(`Created issue: ${title} with labels ${issueLabels.join(', ')}`);
               } else {
