@@ -1,0 +1,106 @@
+name: PR Merge Watcher
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+  issues: read
+
+jobs:
+  notif-merged-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Ambil Data Real-time PR dari GitHub API
+        id: fetch_pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Berikan jeda 10 detik agar status database GitHub sinkron sempurna
+          echo "Menunggu 10 detik agar status sinkronisasi merge matang..."
+          sleep 10
+
+          PR_NUM="${{ github.event.pull_request.number }}"
+          PR_DATA=$(curl -s \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUM")
+
+          COMMITS=$(echo "$PR_DATA" | jq -r '.commits // "1"')
+          FILES=$(echo "$PR_DATA" | jq -r '.changed_files // "1"')
+          BRANCH=$(echo "$PR_DATA" | jq -r '.head.ref // "main"')
+          TITLE=$(echo "$PR_DATA" | jq -r '.title // "Proposal Transaksi PR"')
+          IS_MERGED=$(echo "$PR_DATA" | jq -r '.merged // false')
+          HTML_URL=$(echo "$PR_DATA" | jq -r '.html_url // "${{ github.server_url }}/$GITHUB_REPOSITORY/pull/$PR_NUM"')
+
+          echo "TOTAL_COMMITS=$COMMITS" >> $GITHUB_ENV
+          echo "CHANGED_FILES=$FILES" >> $GITHUB_ENV
+          echo "PR_BRANCH=$BRANCH" >> $GITHUB_ENV
+          echo "PR_TITLE=$TITLE" >> $GITHUB_ENV
+          echo "PR_HTML_URL=$HTML_URL" >> $GITHUB_ENV
+          echo "PR_NUMBER=$PR_NUM" >> $GITHUB_ENV
+          echo "PR_IS_MERGED=$IS_MERGED" >> $GITHUB_ENV
+
+      - name: Atur Payload Status Closed / Merged
+        id: format
+        run: |
+          echo "FOOTER=💎 'Setiap transaksi harus mendatangkan nilai keuntungan bagi Liyue.'" >> $GITHUB_ENV
+
+          if [ "$PR_IS_MERGED" = "true" ]; then
+            echo "COLOR=10181046" >> $GITHUB_ENV # 🟪 Ungu (Merged)
+            echo "TITLE=🤝 Kontrak Disetujui dan Disahkan [#Merged]" >> $GITHUB_ENV
+            echo "DESC=Kesepakatan telah dicapai! Draf proposal ini resmi digabungkan ke dalam cabang utama. Kerja sama yang sangat menguntungkan." >> $GITHUB_ENV
+          else
+            echo "COLOR=15158332" >> $GITHUB_ENV # 🟥 Merah (Closed tanpa Merge)
+            echo "TITLE=❌ Proposal Kontrak Ditolak [#Closed]" >> $GITHUB_ENV
+            echo "DESC=Setelah pertimbangan yang matang di Jade Chamber, investasi kode ini dinilai tidak membawa keuntungan bagi kestabilan proyek. Berkas dibatalkan." >> $GITHUB_ENV
+          fi
+
+      - name: Kirim Notifikasi via JQ
+        env:
+          DISCORD_URL: ${{ secrets.DISCORD_WEBHOOK_PR }}
+        run: |
+          if [ -z "$DISCORD_URL" ]; then echo "Error: DISCORD_WEBHOOK_PR kosong!"; exit 1; fi
+          
+          USER_ACTOR="${{ github.actor }}"
+          COMMENT_TEXT="Transaksi proposal draf telah ditutup di Jade Chamber."
+          REPO_URL="${{ github.server_url }}/$GITHUB_REPOSITORY/tree/$PR_BRANCH"
+          STAT_BOX="🔢 ${TOTAL_COMMITS} commits"$'\n'"📂 ${CHANGED_FILES} files"
+          FORMATTED_COMMENT=$(printf '```\n%s\n```' "$COMMENT_TEXT")
+
+          jq -n \
+            --arg title "$TITLE" \
+            --arg desc "$DESC" \
+            --arg color "${COLOR:-3447003}" \
+            --arg repo_name "$GITHUB_REPOSITORY" \
+            --arg repo_url "$REPO_URL" \
+            --arg doc_title "$PR_TITLE" \
+            --arg doc_num "#$PR_NUMBER" \
+            --arg doc_url "$PR_HTML_URL" \
+            --arg actor "$USER_ACTOR" \
+            --arg stats "$STAT_BOX" \
+            --arg body "$FORMATTED_COMMENT" \
+            --arg footer_text "$FOOTER" \
+            --arg branch "$PR_BRANCH" \
+            '{
+              embeds: [{
+                title: $title,
+                description: $desc,
+                color: ($color | tonumber),
+                fields: [
+                  { name: "🏰 Lokasi Pemeriksaan", value: ("[" + $repo_name + " (" + $branch + ")](" + $repo_url + ")"), inline: false },
+                  { name: "💼 Judul Perjanjian PR", value: ("[*Nomor Berkas: " + $doc_num + "*](" + $doc_url + ")"), inline: false },
+                  { name: "📝 Isi Ulasan / Isi Komentar", value: $body, inline: false },
+                  { name: "📊 Ringkasan Berkas", value: $stats, inline: true },
+                  { name: "👤 Peninjau Kontrak", value: ("`" + $actor + "`"), inline: true }
+                ],
+                footer: { text: $footer_text }
+              }]
+            }' > pr_payload.json
+
+          curl -H "Content-Type: application/json" -X POST -d @pr_payload.json "$DISCORD_URL"
