@@ -73,18 +73,21 @@ jobs:
 
       - name: Atur Payload Gaya Bisnis Ningguang
         id: format
+        env:
+          GH_EVENT_NAME: ${{ github.event_name }}
+          GH_ACTION: ${{ github.event.action }}
+          GH_IS_MERGED: ${{ github.event.pull_request.merged }}
+          GH_REVIEW_STATE: ${{ github.event.review.state }}
         run: |
-          EVENT_NAME="${{ github.event_name }}"
-          ACTION="${{ github.event.action }}"
-          IS_MERGED="${{ github.event.pull_request.merged }}"
-          REVIEW_STATE="${{ github.event.review.state }}"
-          
           echo "FOOTER=💎 'Setiap transaksi harus mendatangkan nilai keuntungan bagi Liyue.'" >> $GITHUB_ENV
           INDEX=$((RANDOM % 4))
           
-          # --- LOGIKA WARNA, TEKS, & HASHTAG BERDASARKAN EVENT ---
+          # --- DEBUGGING LOG (Bisa dicek di log GitHub Actions jika ada eror) ---
+          echo "Event: $GH_EVENT_NAME | Action: $GH_ACTION | Merged: $GH_IS_MERGED | Review State: $GH_REVIEW_STATE"
+
+          # --- EVALUASI KONDISI DENGAN VARIABEL LINGKUNGAN AMAN ---
           
-          if [ "$EVENT_NAME" = "pull_request" ] && [ "$ACTION" = "opened" ]; then
+          if [ "$GH_EVENT_NAME" = "pull_request" ] && [ "$GH_ACTION" = "opened" ]; then
             echo "COLOR=3447003" >> $GITHUB_ENV # 🟦 Biru
             echo "TITLE=📜 Proposal Kontrak Kerja Baru Tiba [#New]" >> $GITHUB_ENV
             if [ $INDEX -eq 0 ]; then
@@ -95,13 +98,13 @@ jobs:
               echo "DESC=Jangan biarkan ada celah hukum atau bug sekecil apa pun lolos dari pengawasan Jade Chamber. Kita akan melakukan audit menyeluruh terhadap pengajuan baru ini." >> $GITHUB_ENV
             fi
 
-          elif [ "$EVENT_NAME" = "pull_request" ] && [ "$ACTION" = "synchronize" ]; then
+          elif [ "$GH_EVENT_NAME" = "pull_request" ] && [ "$GH_ACTION" = "synchronize" ]; then
             echo "COLOR=15844367" >> $GITHUB_ENV # 🟨 Kuning
             echo "TITLE=🔄 Pembaruan Dokumen Kontrak: Amandemen Baru Masuk [#Synchronize]" >> $GITHUB_ENV
             echo "DESC=Mitra bisnis kita baru saja mengirimkan lembar amandemen kodingan baru ke dalam proposal ini. Jade Chamber akan langsung menghitung ulang nilai aset dan memeriksa statistik perubahan terbarunya." >> $GITHUB_ENV
 
-          elif [ "$EVENT_NAME" = "pull_request" ] && [ "$ACTION" = "closed" ]; then
-            if [ "$IS_MERGED" = "true" ]; then
+          elif [ "$GH_EVENT_NAME" = "pull_request" ] && [ "$GH_ACTION" = "closed" ]; then
+            if [ "$GH_IS_MERGED" = "true" ]; then
               echo "COLOR=3066993" >> $GITHUB_ENV # 🟩 Hijau
               echo "TITLE=🤝 Kontrak Disetujui dan Disahkan [#Merged]" >> $GITHUB_ENV
               echo "DESC=Kesepakatan telah dicapai! Draf proposal ini resmi digabungkan ke dalam cabang utama. Kerja sama yang sangat menguntungkan." >> $GITHUB_ENV
@@ -111,20 +114,20 @@ jobs:
               echo "DESC=Setelah pertimbangan yang matang di Jade Chamber, investasi kode ini dinilai tidak membawa keuntungan bagi kestabilan proyek. Berkas dibatalkan." >> $GITHUB_ENV
             fi
 
-          elif [ "$EVENT_NAME" = "pull_request_review" ] && [ "$REVIEW_STATE" = "approved" ]; then
+          elif [ "$GH_EVENT_NAME" = "pull_request_review" ] && [ "$GH_REVIEW_STATE" = "approved" ]; then
             echo "COLOR=3066993" >> $GITHUB_ENV # 🟩 Hijau
             echo "TITLE=✅ Audit Selesai: Kontrak Mendapat Sertifikasi [#Approved]" >> $GITHUB_ENV
             echo "DESC=Kabar baik. Salah satu pengawas keuangan senior kita telah memeriksa struktur amandemen ini dan memberikan tanda sepakat. Jalan menuju merger semakin terbuka lebar." >> $GITHUB_ENV
 
-          elif [ "$EVENT_NAME" = "pull_request_review" ] && [ "$REVIEW_STATE" = "changes_requested" ]; then
+          elif [ "$GH_EVENT_NAME" = "pull_request_review" ] && [ "$GH_REVIEW_STATE" = "changes_requested" ]; then
             echo "COLOR=15158332" >> $GITHUB_ENV # 🟥 Merah
             echo "TITLE=⚠️ Amandemen Ditolak Sementara [#ChangesRequested]" >> $GITHUB_ENV
             echo "DESC=Tunggu dulu. Ditemukan poin audit yang cacat atau berisiko merugikan sistem. Dokumen dikembalikan ke meja pemohon untuk segera direvisi sesuai instruksi." >> $GITHUB_ENV
 
           else
-            # Semua jenis komentar (issue_comment, pr_review_comment, atau review biasa berupa comment)
+            # Fallback untuk semua jenis komentar / review biasa berupa comment
             echo "COLOR=15844367" >> $GITHUB_ENV # 🟨 Kuning
-            if [ "$EVENT_NAME" = "pull_request_review" ]; then
+            if [ "$GH_EVENT_NAME" = "pull_request_review" ]; then
               echo "TITLE=💬 Ulasan Catatan Berkas Transaksi [#Comment]" >> $GITHUB_ENV
               echo "DESC=Sebuah tinjauan umum tanpa putusan final baru saja ditambahkan pada lembar draf kerja ini. Evaluasi umum sedang berlangsung." >> $GITHUB_ENV
             else
