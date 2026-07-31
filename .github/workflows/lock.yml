@@ -12,9 +12,18 @@ jobs:
   lock:
     runs-on: ubuntu-latest
     steps:
+      # 🤖 LANGKAH TAMBAHAN: Generate token khusus dari GitHub App bot pribadi Anda
+      - name: Generate Bot Token
+        id: bot_token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+
       - uses: dessant/lock-threads@v6
         with:
-          github-token: ${{ github.token }}
+          # Ganti github.token bawaan dengan token hasil generate bot pribadi
+          github-token: ${{ steps.bot_token.outputs.token }}
           issue-inactive-days: '1'
           pr-inactive-days: '1'
           add-issue-labels: 'Solved'
