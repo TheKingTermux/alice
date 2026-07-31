@@ -30,7 +30,6 @@ jobs:
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         with:
           script: |
-            const { context, github } = require('@actions/github');
             const payload = context.payload;
             const owner = context.repo.owner;
             const repo = context.repo.repo;
