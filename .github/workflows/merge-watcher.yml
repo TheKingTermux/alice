@@ -79,27 +79,24 @@ jobs:
         run: |
           echo "FOOTER=💎 'Setiap transaksi harus mendatangkan nilai keuntungan bagi Liyue.'" >> $GITHUB_ENV
 
-          # Filter pengaman: Jika PR belum benar-benar closed atau merged, batalkan job agar tidak salah kirim
-          if [ "$PR_IS_MERGED" != "true" ] && [ "$PR_STATE" != "closed" ]; then
-            echo "PR belum tertutup atau ter-merge sepenuhnya. Menghentikan proses pengiriman notifikasi."
-            echo "SHOULD_SEND=false" >> $GITHUB_ENV
-            exit 0
-          fi
-
-          echo "SHOULD_SEND=true" >> $GITHUB_ENV
-
+          # Lakukan pengecekan status
           if [ "$PR_IS_MERGED" = "true" ]; then
             echo "COLOR=10181046" >> $GITHUB_ENV # 🟪 Ungu (Merged)
             echo "TITLE=🤝 Kontrak Disetujui dan Disahkan [#Merged]" >> $GITHUB_ENV
             echo "DESC=Kesepakatan telah dicapai! Draf proposal ini resmi digabungkan ke dalam cabang utama. Kerja sama yang sangat menguntungkan." >> $GITHUB_ENV
-          else
+            echo "should_send=true" >> $GITHUB_OUTPUT # Gunakan step output
+          elif [ "$PR_STATE" = "closed" ]; then
             echo "COLOR=15158332" >> $GITHUB_ENV # 🟥 Merah (Closed tanpa Merge)
             echo "TITLE=❌ Proposal Kontrak Ditolak [#Closed]" >> $GITHUB_ENV
             echo "DESC=Setelah pertimbangan yang matang di Jade Chamber, investasi kode ini dinilai tidak membawa keuntungan bagi kestabilan proyek. Berkas dibatalkan." >> $GITHUB_ENV
+            echo "should_send=true" >> $GITHUB_OUTPUT # Gunakan step output
+          else
+            echo "PR belum tertutup atau ter-merge sepenuhnya. Batalkan pengiriman."
+            echo "should_send=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Kirim Notifikasi via JQ
-        if: steps.format.outputs.SHOULD_SEND == 'true'
+        if: steps.format.outputs.should_send == 'true'
         env:
           DISCORD_URL: ${{ secrets.DISCORD_WEBHOOK_PR }}
         run: |
