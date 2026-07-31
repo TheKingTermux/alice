@@ -1,8 +1,8 @@
 name: Codeowners merging
 
 on:
-  pull_request_target:
-    types: [opened, synchronize]
+  pull_request:
+    types: [opened, synchronize, reopened]
   issue_comment:
     types: [created]
   pull_request_review:
@@ -17,7 +17,6 @@ jobs:
       statuses: read
 
     steps:
-      # 1. Generate token sah dari bot pribadi Anda (thekingtermux-bot)
       - name: Generate Bot Token
         id: bot_token
         uses: actions/create-github-app-token@v1
@@ -25,7 +24,6 @@ jobs:
           app-id: ${{ secrets.BOT_APP_ID }}
           private-key: ${{ secrets.BOT_PRIVATE_KEY }}
 
-      # 2. Jalankan logika pengecekan Codeowners dan Auto-Merge langsung via skrip native
       - name: Auto Merge via Bot
         uses: actions/github-script@v7
         with:
@@ -36,22 +34,20 @@ jobs:
 
             console.log(`Memeriksa status otorisasi untuk PR #${pull_number}...`);
 
-            // Ambil detail data PR terbaru
             const pr = await github.rest.pulls.get({
               owner,
               repo,
               pull_number,
             });
 
-            // Pastikan PR masih terbuka dan belum di-merge
             if (pr.data.state !== 'closed' && !pr.data.merged) {
-              console.log(`Melakukan pengesahan dan penggabungan otomatis (Merge) untuk PR #${pull_number}...`);
+              console.log(`Melakukan penggabungan otomatis (Merge) untuk PR #${pull_number}...`);
               
               await github.rest.pulls.merge({
                 owner,
                 repo,
                 pull_number,
-                merge_method: 'merge', // Bisa diganti 'squash' atau 'rebase' sesuai selera
+                merge_method: 'merge',
                 commit_message: 'Otomatis: Merge Pull Request oleh Bot'
               });
               
