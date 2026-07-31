@@ -105,12 +105,6 @@ jobs:
             echo "TITLE=✅ Audit Selesai: Kontrak Mendapat Sertifikasi [#Approved]" >> $GITHUB_ENV
             echo "DESC=Kabar baik. Salah satu pengawas keuangan senior kita telah memeriksa struktur amandemen ini dan memberikan tanda sepakat. Jalan menuju merger semakin terbuka lebar." >> $GITHUB_ENV
 
-          # 2. Cek Merged (Ungu) - Berjalan ketika tombol Merge diklik (dengan bantuan sleep 10 di atas agar datanya matang)
-          elif [ "$PR_IS_MERGED" = "true" ]; then
-            echo "COLOR=10181046" >> $GITHUB_ENV # 🟪 Ungu (Merged)
-            echo "TITLE=🤝 Kontrak Disetujui dan Disahkan [#Merged]" >> $GITHUB_ENV
-            echo "DESC=Kesepakatan telah dicapai! Draf proposal ini resmi digabungkan ke dalam cabang utama. Kerja sama yang sangat menguntungkan." >> $GITHUB_ENV
-
           elif [ "$GH_EVENT_NAME" = "pull_request" ] && [ "$GH_ACTION" = "opened" ]; then
             echo "COLOR=3447003" >> $GITHUB_ENV # 🟦 Biru
             echo "TITLE=📜 Proposal Kontrak Kerja Baru Tiba [#New]" >> $GITHUB_ENV
@@ -126,11 +120,6 @@ jobs:
             echo "COLOR=15844367" >> $GITHUB_ENV # 🟨 Kuning
             echo "TITLE=🔄 Pembaruan Dokumen Kontrak: Amandemen Baru Masuk [#Synchronize]" >> $GITHUB_ENV
             echo "DESC=Mitra bisnis kita baru saja mengirimkan lembar amandemen kodingan baru ke dalam proposal ini. Jade Chamber akan langsung menghitung ulang nilai aset dan memeriksa statistik perubahan terbarunya." >> $GITHUB_ENV
-
-          elif [ "$GH_EVENT_NAME" = "pull_request" ] && [ "$GH_ACTION" = "closed" ]; then
-            echo "COLOR=15158332" >> $GITHUB_ENV # 🟥 Merah (Closed tanpa Merge / Ditolak)
-            echo "TITLE=❌ Proposal Kontrak Ditolak [#Closed]" >> $GITHUB_ENV
-            echo "DESC=Setelah pertimbangan yang matang di Jade Chamber, investasi kode ini dinilai tidak membawa keuntungan bagi kestabilan proyek. Berkas dibatalkan." >> $GITHUB_ENV
 
           elif [ "$GH_EVENT_NAME" = "pull_request_review" ] && [ "$GH_REVIEW_STATE" = "changes_requested" ]; then
             echo "COLOR=15158332" >> $GITHUB_ENV # 🟥 Merah (Changes Requested)
