@@ -2,12 +2,9 @@ name: Monitor Semua Workflow
 on:
   workflow_run:
     workflows: 
-      - "Greetings"
-      - "Dependency Review"
       - "CodeQL"
       - "Codeowners merging"
       - "Dependabot Updates"
-      - "Dependency Review"
       - "Monitor Pull Requests"
       - "Monitor Issues"
     types:
