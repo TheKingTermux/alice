@@ -39,7 +39,7 @@ jobs:
 
           echo "Mengambil dokumen audit untuk PR #$PR_NUM dari Jade Chamber..."
           
-          # 2. Ambil data dari API
+          # 2. Ambil data asli langsung dari endpoint API GitHub
           PR_DATA=$(curl -s \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
@@ -58,8 +58,9 @@ jobs:
           TITLE=$(echo "$PR_DATA" | jq -r '.title // empty')
           [ -z "$TITLE" ] || [ "$TITLE" = "null" ] && TITLE="${{ github.event.pull_request.title || github.event.review.pull_request.title || 'Proposal Transaksi PR' }}"
 
-          # AMBIL STATUS MERGED LANGSUNG DARI API REAL-TIME
+          # AMBIL STATUS MERGED LANGSUNG DARI API REST (BERSIH & AKURAT)
           API_MERGED_STATUS=$(echo "$PR_DATA" | jq -r '.merged // false')
+          API_PR_STATE=$(echo "$PR_DATA" | jq -r '.state // "open"')
 
           HTML_URL=$(echo "$PR_DATA" | jq -r '.html_url // empty')
           if [ -z "$HTML_URL" ] || [ "$HTML_URL" = "null" ]; then
@@ -74,6 +75,7 @@ jobs:
           echo "PR_HTML_URL=$HTML_URL" >> $GITHUB_ENV
           echo "PR_NUMBER=$PR_NUM" >> $GITHUB_ENV
           echo "PR_IS_MERGED=$API_MERGED_STATUS" >> $GITHUB_ENV
+          echo "PR_STATE=$API_PR_STATE" >> $GITHUB_ENV
 
       - name: Atur Payload Gaya Bisnis Ningguang
         id: format
@@ -81,26 +83,22 @@ jobs:
           GH_EVENT_NAME: ${{ github.event_name }}
           GH_ACTION: ${{ github.event.action }}
           GH_REVIEW_STATE: ${{ github.event.review.state }}
-          GH_ENV_MERGED: ${{ github.event.pull_request.merged }}
         run: |
           echo "FOOTER=💎 'Setiap transaksi harus mendatangkan nilai keuntungan bagi Liyue.'" >> $GITHUB_ENV
           INDEX=$((RANDOM % 4))
           
-          # BENTENG 3 LAPIS: Cek status merged dari API, Context ENV, dan JSON Payload
-          PAYLOAD_MERGED=$(jq -r '.pull_request.merged // false' "$GITHUB_EVENT_PATH")
-          
-          if [ "$PR_IS_MERGED" = "true" ] || [ "$PAYLOAD_MERGED" = "true" ] || [ "$GH_ENV_MERGED" = "true" ]; then
-            FINAL_MERGED="true"
-          else
-            FINAL_MERGED="false"
-          fi
-          
           # --- DEBUGGING LOG ---
-          echo "Event: $GH_EVENT_NAME | Action: $GH_ACTION | Final Merged Status: $FINAL_MERGED"
+          echo "Event: $GH_EVENT_NAME | Action: $GH_ACTION | API Merged: $PR_IS_MERGED | State: $PR_STATE | Review State: $GH_REVIEW_STATE"
 
-          # --- EVALUASI KONDISI ---
+          # --- EVALUASI KONDISI DENGAN PRIORITAS MERGE ---
           
-          if [ "$GH_EVENT_NAME" = "pull_request" ] && [ "$GH_ACTION" = "opened" ]; then
+          # Prioritas Utama: Jika API menyatakan sudah di-merge, override semua event menjadi status MERGED (Ungu)
+          if [ "$PR_IS_MERGED" = "true" ]; then
+            echo "COLOR=10181046" >> $GITHUB_ENV # 🟪 Ungu (Merged)
+            echo "TITLE=🤝 Kontrak Disetujui dan Disahkan [#Merged]" >> $GITHUB_ENV
+            echo "DESC=Kesepakatan telah dicapai! Draf proposal ini resmi digabungkan ke dalam cabang utama. Kerja sama yang sangat menguntungkan." >> $GITHUB_ENV
+
+          elif [ "$GH_EVENT_NAME" = "pull_request" ] && [ "$GH_ACTION" = "opened" ]; then
             echo "COLOR=3447003" >> $GITHUB_ENV # 🟦 Biru
             echo "TITLE=📜 Proposal Kontrak Kerja Baru Tiba [#New]" >> $GITHUB_ENV
             if [ $INDEX -eq 0 ]; then
@@ -117,17 +115,10 @@ jobs:
             echo "DESC=Mitra bisnis kita baru saja mengirimkan lembar amandemen kodingan baru ke dalam proposal ini. Jade Chamber akan langsung menghitung ulang nilai aset dan memeriksa statistik perubahan terbarunya." >> $GITHUB_ENV
 
           elif [ "$GH_EVENT_NAME" = "pull_request" ] && [ "$GH_ACTION" = "closed" ]; then
-            
-            # Pengecekan status MERGED yang dikunci ketat
-            if [ "$FINAL_MERGED" = "true" ]; then
-              echo "COLOR=10181046" >> $GITHUB_ENV # 🟪 Ungu (Merged)
-              echo "TITLE=🤝 Kontrak Disetujui dan Disahkan [#Merged]" >> $GITHUB_ENV
-              echo "DESC=Kesepakatan telah dicapai! Draf proposal ini resmi digabungkan ke dalam cabang utama. Kerja sama yang sangat menguntungkan." >> $GITHUB_ENV
-            else
-              echo "COLOR=15158332" >> $GITHUB_ENV # 🟥 Merah (Closed tanpa Merge)
-              echo "TITLE=❌ Proposal Kontrak Ditolak [#Closed]" >> $GITHUB_ENV
-              echo "DESC=Setelah pertimbangan yang matang di Jade Chamber, investasi kode ini dinilai tidak membawa keuntungan bagi kestabilan proyek. Berkas dibatalkan." >> $GITHUB_ENV
-            fi
+            # Jika closed tapi tidak merespons true di atas, berarti ditolak
+            echo "COLOR=15158332" >> $GITHUB_ENV # 🟥 Merah (Closed tanpa Merge)
+            echo "TITLE=❌ Proposal Kontrak Ditolak [#Closed]" >> $GITHUB_ENV
+            echo "DESC=Setelah pertimbangan yang matang di Jade Chamber, investasi kode ini dinilai tidak membawa keuntungan bagi kestabilan proyek. Berkas dibatalkan." >> $GITHUB_ENV
 
           elif [ "$GH_EVENT_NAME" = "pull_request_review" ] && [ "$GH_REVIEW_STATE" = "approved" ]; then
             echo "COLOR=3066993" >> $GITHUB_ENV # 🟩 Hijau (Approved)
