@@ -11,8 +11,7 @@ permissions:
 
 jobs:
   kirim-notifikasi-sidang:
-    runs-on: ubuntu-slim
-    # BENTENG PENGAMAN MUTLAK: Langsung matikan mesin runner (Skipped) jika terdeteksi ada objek pull_request di dalam isu
+    runs-on: ubuntu-latest
     if: github.event.issue.pull_request == null
     steps:
       - name: Kirim Notifikasi Sandiwara Ruang Sidang via JQ
@@ -30,25 +29,25 @@ jobs:
 
           if [ "$EVENT_NAME" = "issues" ]; then
             if [ "$ACTION" = "opened" ]; then
-              FURINA_DIALOG="🎭 **Lady Furina:**\n\"Astaga, Neuvillette! Lihat itu! Seseorang mengajukan tuntutan keluhan baru di panggung megah kita! Apakah ini sebuah tantangan terbuka untuk keadilanku?! Bersiaplah, seluruh penonton teater kini tertuju pada kasus \`$ISSUE_NUM\` ini!~\""
-              NEUVI_DIALOG="⚖️ **Monsieur Neuvillette:**\n\"Harap tenang, Lady Furina. Berdasarkan konstitusi repositori, warga \`$ACTOR\` memang berhak melaporkan masalah demi kebaikan bersama. Mari kita catat berkas perkara ini dan memeriksanya secara objektif.\""
+              FURINA_DIALOG="Astaga, Neuvillette! Lihat itu! Seseorang mengajukan tuntutan keluhan baru di panggung megah kita! Apakah ini sebuah tantangan terbuka untuk keadilanku?! Bersiaplah, seluruh penonton teater kini tertuju pada kasus $ISSUE_NUM ini!~"
+              NEUVI_DIALOG="Harap tenang, Lady Furina. Berdasarkan konstitusi repositori, warga \`$ACTOR\` memang berhak melaporkan masalah demi kebaikan bersama. Mari kita catat berkas perkara ini dan memeriksanya secara objektif."
             else
-              FURINA_DIALOG="🎭 **Lady Furina:**\n\"Tepuk tangan yang meriah, silakan! Kasus hukum \`$ISSUE_NUM\` resmi diselesaikan berkat kejeniusanku yang tiada tanding! Pertunjukan yang luar biasa dan berakhir dengan sangat indah, bukan?~\""
-              NEUVI_DIALOG="⚖️ **Monsieur Neuvillette:**\n\"Penyelesaian berkas ini adalah hasil dari evaluasi yang matang, bukan sekadar pertunjukan teater. Tuntutan oleh \`$ACTOR\` ditutup, dan keharmonisan sistem telah dipulihkan sebagaimana mestinya.\""
+              FURINA_DIALOG="Tepuk tangan yang meriah, silakan! Kasus hukum $ISSUE_NUM resmi diselesaikan berkat kejeniusanku yang tiada tanding! Pertunjukan yang luar biasa dan berakhir dengan sangat indah, bukan?~"
+              NEUVI_DIALOG="Penyelesaian berkas ini adalah hasil dari evaluasi yang matang, bukan sekadar pertunjukan teater. Tuntutan oleh \`$ACTOR\` ditutup, dan keharmonisan sistem telah dipulihkan sebagaimana mestinya."
             fi
           else
             if [ $INDEX -eq 0 ]; then
-              FURINA_DIALOG="🎭 **Lady Furina:**\n\"Astaga! Seseorang baru saja mengirimkan surat kesaksian rahasia di tengah jalannya sidang! Lihat ini, \`$ACTOR\` berani menyuarakan pendapatnya langsung di panggung utamaku! Drama ini semakin menarik!~\""
-              NEUVI_DIALOG="⚖️ **Monsieur Neuvillette:**\n\"Garda keamanan tidak perlu melakukan intervensi. Saksi \`$ACTOR\` memiliki hak menambahkan bukti baru pada perkara $ISSUE_NUM. Mari kita pelajari dokumen argumen ini secara rasional.\""
+              FURINA_DIALOG="Astaga! Seseorang baru saja mengirimkan surat kesaksian rahasia di tengah jalannya sidang! Lihat ini, \`$ACTOR\` berani menyuarakan pendapatnya langsung di panggung utamaku! Drama ini semakin menarik!~"
+              NEUVI_DIALOG="Garda keamanan tidak perlu melakukan intervensi. Saksi \`$ACTOR\` memiliki hak menambahkan bukti baru pada perkara $ISSUE_NUM. Mari kita pelajari dokumen argumen ini secara rasional."
             elif [ $INDEX -eq 1 ]; then
-              FURINA_DIALOG="🎭 **Lady Furina:**\n\"Tunggu, hentikan musiknya! Jangan bilang orang bernama \`$ACTOR\` ini berniat merebut sorotan lampu panggung dariku dengan komentar tambahan itu?! Neuvillette, lakukan sesuatu!\""
-              NEUVI_DIALOG="⚖️ **Monsieur Neuvillette:**\n\"Duduklah kembali di kursimu, Lady Furina. Apa yang dilakukan \`$ACTOR\` adalah bagian dari diskusi sehat. Biarkan saya menelaah isi dari ulasan tersebut tanpa gangguan.\""
+              FURINA_DIALOG="Tunggu, hentikan musiknya! Jangan billing orang bernama \`$ACTOR\` ini berniat merebut sorotan lampu panggung dariku dengan komentar tambahan itu?! Neuvillette, lakukan sesuatu!"
+              NEUVI_DIALOG="Duduklah kembali di kursimu, Lady Furina. Apa yang dilakukan \`$ACTOR\` adalah bagian dari diskusi sehat. Biarkan saya menelaah isi dari ulasan tersebut tanpa gangguan."
             elif [ $INDEX -eq 2 ]; then
-              FURINA_DIALOG="🎭 **Lady Furina:**\n\"Eh? T-tunggu sebentar... Apa maksud dari kalimat rumit yang diketik oleh \`$ACTOR\` ini? Sulit dimengerti! Tapi sebagai Archon yang bijaksana, tentu saja aku... ehem, pura-pura paham!\""
-              NEUVI_DIALOG="⚖️ **Monsieur Neuvillette:**\n\"*Helaan napas berat...* Jika Anda membaca dengan teliti, \`$ACTOR\` sedang memberikan ulasan teknis yang krusial untuk perbaikan bug. Saya akan merangkum esensinya untuk Anda.\""
+              FURINA_DIALOG="Eh? T-tunggu sebentar... Apa maksud dari kalimat rumit yang diketik oleh \`$ACTOR\` ini? Sulit dimengerti! Tapi sebagai Archon yang bijaksana, tentu saja aku... ehem, pura-pura paham!"
+              NEUVI_DIALOG="*Helaan napas berat...* Jika Anda membaca dengan teliti, \`$ACTOR\` sedang memberikan ulasan teknis yang krusial untuk perbaikan bug. Saya akan merangkum esensinya untuk Anda."
             else
-              FURINA_DIALOG="🎭 **Lady Furina:**\n\"Oho! Ketegangan di ruang sidang semakin memuncak! \`$ACTOR\` baru saja melemparkan argumen baru yang sangat tajam ke dalam diskusi! Penonton di balkon mulai berteriak histeris!~\""
-              NEUVI_DIALOG="⚖️ **Monsieur Neuvillette:**\n\"Persidangan ini adalah tempat mencari kebenaran, bukan ajang hiburan sirkus. Kita harus tetap menghormati dedikasi \`$ACTOR\` dalam memberikan sudut pandang baru pada berkas $ISSUE_NUM.\""
+              FURINA_DIALOG="Oho! Ketegangan di ruang sidang semakin memuncak! \`$ACTOR\` baru saja melemparkan argumen baru yang sangat tajam ke dalam diskusi! Penonton di balkon mulai berteriak histeris!~"
+              NEUVI_DIALOG="Persidangan ini adalah tempat mencari kebenaran, Lady Furina, bukan ajang hiburan sirkus. Kita harus tetap menghormati dedikasi \`$ACTOR\` dalam memberikan sudut pandang baru pada berkas $ISSUE_NUM."
             fi
           fi
 
@@ -61,9 +60,16 @@ jobs:
             FIELD_VALUE="\`$ACTOR\`"
           fi
 
+          # Link Avatar Fandom Resmi (Aman dari rendering crash)
+          FURINA_AVATAR="https://nocookie.net"
+          NEUVI_AVATAR="https://nocookie.net"
+
+          # 1. TIM FURINA DE FONTAINE (Menembak ke DISCORD_WEBHOOK_COMMENTS)
           jq -n \
-            --arg title "🏛️ Ruang Sidang Fontaine: Perkembangan Berkas" \
-            --arg desc "($FURINA_DIALOG\n\n$NEUVI_DIALOG)" \
+            --arg username "Furina de Fontaine" \
+            --arg avatar "$FURINA_AVATAR" \
+            --arg title "🎭 Panggung Teater Furina: Interupsi Sidang!" \
+            --arg desc "$FURINA_DIALOG" \
             --arg repo_name "$REPO_NAME" \
             --arg repo_url "$REPO_URL" \
             --arg issue_title "$ISSUE_TITLE" \
@@ -72,20 +78,50 @@ jobs:
             --arg f_name "$FIELD_NAME" \
             --arg f_val "$FIELD_VALUE" \
             '{
+              username: $username,
+              avatar_url: $avatar,
+              embeds: [{
+                title: $title,
+                description: $desc,
+                color: 6197475,
+                fields: [
+                  { name: "🏰 Lokasi Sidang", value: ("[" + $repo_name + "](" + $repo_url + ")"), inline: false },
+                  { name: "📌 Berkas Bahasan", value: ("[" + $issue_title + " " + $issue_num + "](" + $issue_url + ")"), inline: false },
+                  { name: $f_name, value: $f_val, inline: false }
+                ],
+                footer: { text: "✨ \"Tepuk tangan yang meriah, silakan! Pertunjukan baru saja dimulai!~\"" }
+              }]
+            }' > furina_msg.json
+
+          curl -H "Content-Type: application/json" -X POST -d @furina_msg.json "${{ secrets.DISCORD_WEBHOOK_COMMENTS }}"
+
+          # Jeda 1 detik demi stabilitas urutan chat di Discord
+          sleep 1
+
+          # 2. TIM IUDEX NEUVILLETTE (Menembak ke DISCORD_WEBHOOK_ISSUES)
+          jq -n \
+            --arg username "Iudex Neuvillette" \
+            --arg avatar "$NEUVI_AVATAR" \
+            --arg title "⚖️ Pengadilan Fontaine: Tanggapan Kehakiman" \
+            --arg desc "$NEUVI_DIALOG" \
+            --arg repo_name "$REPO_NAME" \
+            --arg repo_url "$REPO_URL" \
+            --arg issue_title "$ISSUE_TITLE" \
+            --arg issue_num "$ISSUE_NUM" \
+            --arg issue_url "$ISSUE_URL" \
+            '{
+              username: $username,
+              avatar_url: $avatar,
               embeds: [{
                 title: $title,
                 description: $desc,
                 color: 2456538,
                 fields: [
                   { name: "🏰 Lokasi Sidang", value: ("[" + $repo_name + "](" + $repo_url + ")"), inline: false },
-                  { name: "📌 Berkas Bahasan", value: ("[" + $issue_title + " " + $issue_num + "](" + $issue_url + ")"), inline: false },
-                  { name: $f_name, value: $f_val, inline: false }
+                  { name: "📌 Berkas Bahasan", value: ("[" + $issue_title + " " + $issue_num + "](" + $issue_url + ")"), inline: false }
                 ],
-                footer: { text: "⚖️ \"Hukum tidak memandang bulu, dan tirai pertunjukan tidak akan diturunkan.\"" }
+                footer: { text: "⚖️ \"Hukum tidak memandang bulu, dan keadilan tetap berjalan di ruang sidang.\"" }
               }]
-            }' > comment_payload.json
+            }' > neuvi_msg.json
 
-          curl -H "Content-Type: application/json" \
-               -X POST \
-               -d @comment_payload.json \
-               "${{ secrets.DISCORD_WEBHOOK_ISSUES }}"
+          curl -H "Content-Type: application/json" -X POST -d @neuvi_msg.json "${{ secrets.DISCORD_WEBHOOK_ISSUES }}"
