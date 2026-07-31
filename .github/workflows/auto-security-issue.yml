@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # 🤖 LANGKAH TAMBAHAN: Generate token khusus untuk bot Anda
       - name: Generate Bot Token
@@ -29,7 +29,7 @@ jobs:
           private-key: ${{ secrets.BOT_PRIVATE_KEY }}
 
       - name: Extract info & Create/Update Issue
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_TITLE: ${{ github.event.pull_request.title }}

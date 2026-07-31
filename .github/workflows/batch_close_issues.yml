@@ -7,13 +7,22 @@ jobs:
   stale:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/stale@v10
-      with:
-        repo-token: ${{ secrets.GITHUB_TOKEN }}
-        # Close everything older than 1 year
-        days-before-issue-stale: 365
-        days-before-issue-close: 0
-        exempt-issue-labels: do-not-autoclose
-        close-issue-message: "In an effort to have a more manageable issue backlog, we're closing issues older than 1 year. If you think your request or report is still relevant and may benefit others, please open a new issue."
-        ascending: true
-        operations-per-run: 250
+      # 🤖 LANGKAH TAMBAHAN: Generate token khusus dari GitHub App bot pribadi Anda
+      - name: Generate Bot Token
+        id: bot_token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+
+      - uses: actions/stale@v11
+        with:
+          # Ganti GITHUB_TOKEN bawaan dengan token hasil generate bot pribadi
+          repo-token: ${{ steps.bot_token.outputs.token }}
+          # Close everything older than 1 year
+          days-before-issue-stale: 365
+          days-before-issue-close: 0
+          exempt-issue-labels: do-not-autoclose
+          close-issue-message: "In an effort to have a more manageable issue backlog, we're closing issues older than 1 year. If you think your request or report is still relevant and may benefit others, please open a new issue."
+          ascending: true
+          operations-per-run: 250

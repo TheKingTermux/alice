@@ -7,6 +7,8 @@ on:
       - "Dependabot Updates"
       - "Monitor Pull Requests"
       - "Monitor Issues"
+      - "PR Merge Watcher"
+      - "Security PR"
     types:
       - completed
 
@@ -22,7 +24,19 @@ jobs:
         run: |
           CONCLUSION="${{ github.event.workflow_run.conclusion }}"
           TRIGGER_EVENT="${{ github.event.workflow_run.event }}"
-          
+          WF_NAME_RAW="${{ github.event.workflow_run.name }}"
+
+          # =================================================================
+          # FILTER ANTI-SPAM: JIKA STATUSNYA "SKIPPED", BATALKAN KIRIM NOTIFIKASI
+          # =================================================================
+          if [ "$CONCLUSION" = "skipped" ]; then
+            echo "🚫 Workflow '$WF_NAME_RAW' dilewati (skipped). Menghentikan proses pengiriman notifikasi..."
+            echo "SHOULD_SEND=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "SHOULD_SEND=true" >> $GITHUB_OUTPUT
+
           # Pengaman nama cabang branch jika kosong (seperti pada event schedule)
           BRANCH_NAME="${{ github.event.workflow_run.head_branch }}"
           if [ -z "$BRANCH_NAME" ] || [ "$BRANCH_NAME" = "null" ]; then
@@ -31,7 +45,6 @@ jobs:
 
           REPO_NAME_RAW="${{ github.repository }}"
           REPO_URL_COMPLETE="${{ github.server_url }}/$REPO_NAME_RAW/tree/$BRANCH_NAME"
-          WF_NAME_RAW="${{ github.event.workflow_run.name }}"
           WF_LOG_URL_RAW="${{ github.event.workflow_run.html_url }}"
           RUN_NUM="${{ github.event.workflow_run.run_number }}"
 
@@ -55,7 +68,6 @@ jobs:
 
             FULL_TRIGGER_TEXT="$POETIC_TRIGGER"$'\n'"*(Pertunjukan ke-$RUN_NUM)*"
 
-            # Perbaikan JQ: Tanda miring dibentuk aman di level JQ, bukan di level argumen Bash
             jq -n \
               --arg repo "[$REPO_NAME_RAW ($BRANCH_NAME)]($REPO_URL_COMPLETE)" \
               --arg wf "$WF_NAME_RAW" \
@@ -90,7 +102,6 @@ jobs:
 
             FULL_TRIGGER_TEXT="$POETIC_TRIGGER"$'\n'"*(Evaluasi ke-$RUN_NUM)*"
 
-            # Perbaikan JQ: Tanda miring dibentuk aman di level JQ, bukan di level argumen Bash
             jq -n \
               --arg repo "[$REPO_NAME_RAW ($BRANCH_NAME)]($REPO_URL_COMPLETE)" \
               --arg wf "$WF_NAME_RAW" \
@@ -107,6 +118,7 @@ jobs:
           fi
 
       - name: Kirim Notifikasi Aman via JQ
+        if: steps.format.outputs.SHOULD_SEND == 'true'
         run: |
           FIELDS_DATA=$(cat fields_payload.json)
 

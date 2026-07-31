@@ -9,8 +9,18 @@ jobs:
       issues: write
       pull-requests: write
     steps:
-    - uses: actions/first-interaction@v3
-      with:
-        repo_token: ${{ secrets.GITHUB_TOKEN }}
-        issue_message: 'Terimakasih telah memberikan isu terbaru kepada kami'
-        pr_message: 'Terimakasih telah memberikan kontribusi kepada kami'
+      # 🤖 LANGKAH TAMBAHAN: Generate token khusus dari GitHub App bot pribadi Anda
+      - name: Generate Bot Token
+        id: bot_token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+
+      # Jalankan interaksi pertama menggunakan token bot pribadi
+      - uses: actions/first-interaction@v3
+        with:
+          # Ganti GITHUB_TOKEN bawaan dengan token hasil generate bot pribadi
+          repo_token: ${{ steps.bot_token.outputs.token }}
+          issue_message: 'Terimakasih telah memberikan isu terbaru kepada kami'
+          pr_message: 'Terimakasih telah memberikan kontribusi kepada kami'
