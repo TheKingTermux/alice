@@ -7,6 +7,8 @@ on:
       - "Dependabot Updates"
       - "Monitor Pull Requests"
       - "Monitor Issues"
+      - "PR Merge Watcher"
+      - "Security PR"
     types:
       - completed
 
