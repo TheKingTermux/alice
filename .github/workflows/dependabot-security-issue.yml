@@ -7,7 +7,7 @@ on:
 permissions:
   contents: read
   issues: write
-  pull-requests: read
+  pull-requests: write
 
 jobs:
   process-security-pr:
@@ -61,7 +61,8 @@ jobs:
             // Inisialisasi variabel penampung data akurat dari API Advisory
             let severity = 'UNKNOWN';
             let cvss = 'N/A';
-            let summary = `${botType} security update detected.`;
+            let title = `Security Update: ${pkg} (${ghsa})`;
+            let summaryDesc = `${botType} security update detected.`;
             let cweList = 'N/A';
             let vulnRange = 'Unknown';
             let patched = 'None';
@@ -76,18 +77,17 @@ jobs:
                 
                 const advData = advisoryResponse.data;
                 
-                // Ambil data keparahan, deskripsi singkat, dan skor CVSS resmi
+                // Ambil data dari API
+                if (advData.summary) title = advData.summary;
+                if (advData.description) summaryDesc = advData.description;
                 if (advData.severity) severity = advData.severity.toUpperCase();
-                if (advData.summary) summary = advData.summary;
                 if (advData.cvss && advData.cvss.score) cvss = advData.cvss.score.toString();
                 if (advData.cve_id) cve = advData.cve_id;
 
-                // Ambil daftar kelemahan CWE
                 if (advData.cwes && advData.cwes.length > 0) {
                   cweList = advData.cwes.map(c => `${c.cwe_id} (${c.name})`).join(', ');
                 }
 
-                // Ambil daftar versi terdampak & versi perbaikan secara dinamis
                 if (advData.vulnerabilities && advData.vulnerabilities.length > 0) {
                   let ranges = [];
                   let fixes = [];
@@ -97,7 +97,7 @@ jobs:
                     if (v.first_patched_version) fixes.push(v.first_patched_version);
                   });
 
-                  if (ranges.length > 0) vulnRange = ranges.join('\n              - ');
+                  if (ranges.length > 0) vulnRange = ranges.join('\n  - ');
                   if (fixes.length > 0) patched = fixes.join(' / ');
                 }
               } catch (apiError) {
@@ -111,13 +111,13 @@ jobs:
               if (severityMatch) severity = severityMatch[1].toUpperCase();
             }
 
-            // FILTER ANTI-SPAM: Jika bukan PR keamanan, lewati pembuatan Issue
+            // FILTER ANTI-SPAM
             if (botType === 'Dependabot' && severity === 'UNKNOWN' && ghsa === 'No GHSA' && cve === 'No CVE') {
               console.log('✅ PR Dependabot ini adalah update versi normal. Melewati pembuatan Issue...');
               return; 
             }
 
-            // Normalisasi & Pembuatan Label Tingkat Keparahan
+            // Normalisasi & Pembuatan Label
             let issueLabels = ['Security', 'Auto Create Issues', 'dependencies'];
             let severityLabel = 'Low';
             
@@ -130,64 +130,62 @@ jobs:
             }
             issueLabels.push(severityLabel);
 
-            // Judul Issue Resmi
-            const title = `Security: ${severity} - ${pkg} (${ghsa} / ${cve})`;
-
-            // Cari Issue yang sudah ada di repositori
+            // Cari Issue yang sudah ada
             const issues = await github.paginate(
               github.rest.issues.listForRepo,
               { owner, repo, state: 'all', labels: 'Auto Create Issues', per_page: 100 }
             );
             const existing = issues.find(i => i.title === title);
 
-            // 3. STRUKTUR FORMAT BARU PADA BODY ISSUE (MEMPERBAIKI CHECKBOX DAN PERTANYAAN ANDA)
-            const body = `
-              ## 🛡️ Security Vulnerability (from ${botType} PR #${process.env.PR_NUMBER})
+            // 3. STRUKTUR FORMAT BARU PADA BODY ISSUE (Rata Kiri)
+            const body = `## 🛡️ Security Vulnerability (from ${botType} PR #${process.env.PR_NUMBER})
 
-              ### Description
-              ${summary}
+            ### Description
+            ${summaryDesc}
+            
+            ### Severity Check
+            - ${severity === 'LOW' ? '☑' : '☐'} Low
+            - ${severity === 'MODERATE' ? '☑' : '☐'} Moderate
+            - ${severity === 'HIGH' ? '☑' : '☐'} High
+            - ${severity === 'CRITICAL' ? '☑' : '☐'} Critical
+            
+            ### Severity Score
+            ${cvss} / 10
+            
+            ### Identifiers
+            - **GHSA ID:** ${ghsa}
+            - **CVE ID:** ${cve}
+            
+            ### Weaknesses
+            - ${cweList}
+            
+            ### Affected
+            - **Package:** ${pkg}
+            - **Affected versions:**
+              - ${vulnRange}
+            - **Patched versions:** ${patched}
+            
+            ### References
+            - Advisory: https://github.com/advisories/${ghsa}
+            - PR: ${process.env.PR_URL}
+            
+            ---
+            _Auto-generated from ${botType} security PR. Fix by merging PR #${process.env.PR_NUMBER}._`;
 
-              ### Severity Check
-              - ${severity === 'LOW' ? '☑' : '☐'} Low
-              - ${severity === 'MODERATE' ? '☑' : '☐'} Moderate
-              - ${severity === 'HIGH' ? '☑' : '☐'} High
-              - ${severity === 'CRITICAL' ? '☑' : '☐'} Critical
-
-              ### Severity Score
-              ${cvss} / 10
-
-              ### Identifiers
-              - **GHSA ID:** ${ghsa}
-              - **CVE ID:** ${cve}
-
-              ### Weaknesses
-              - ${cweList}
-
-              ### Affected
-              - **Package:** ${pkg}
-              - **Affected versions:**
-                - ${vulnRange}
-              - **Patched versions:** ${patched}
-
-              ### References
-              - Advisory: https://github.com/advisories/${ghsa}
-              - PR: ${process.env.PR_URL}
-
-              ---
-              _Auto-generated from ${botType} security PR. Fix by merging PR #${process.env.PR_NUMBER}._
-            `.replace(/^ +/gm, '');
+            let issueNumber = null;
 
             // Eksekusi Pembuatan atau Pembaruan Tiket Issue
             if (payload.action === 'opened' || payload.action === 'synchronize' || payload.action === 'reopened') {
               if (!existing) {
-                await github.rest.issues.create({
+                const createdIssue = await github.rest.issues.create({
                   owner, repo,
                   title,
                   body,
                   labels: issueLabels,
                   assignees: ['TheKingTermux']
                 });
-                console.log(`Created issue: ${title}`);
+                issueNumber = createdIssue.data.number;
+                console.log(`Created issue #${issueNumber}: ${title}`);
               } else {
                 await github.rest.issues.update({
                   owner, repo,
@@ -204,10 +202,30 @@ jobs:
                     labels: missingLabels
                   });
                 }
-                console.log(`Updated issue: ${title}`);
+                issueNumber = existing.number;
+                console.log(`Updated issue #${issueNumber}: ${title}`);
+              }
+
+              // 4. PENYISIPAN "Closes #Issue" KE DESKRIPSI PR
+              if (issueNumber) {
+                const closingKeywordRegex = new RegExp(`(?:close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)\\s+#${issueNumber}\\b`, 'i');
+                
+                if (!closingKeywordRegex.test(prBody)) {
+                  console.log(`Menyisipkan tautan penutup ke PR deskripsi...`);
+                  const newPrBody = prBody + `\n\n---\n**🛡️ Auto-linked Security Task:** Closes #${issueNumber}`;
+                  
+                  await github.rest.pulls.update({
+                    owner,
+                    repo,
+                    pull_number: process.env.PR_NUMBER,
+                    body: newPrBody
+                  });
+                  console.log(`✅ Deskripsi PR berhasil diperbarui! (Closes #${issueNumber})`);
+                }
               }
             }
 
+            // Fallback: Jika PR ditutup tanpa di-merge tapi issue masih open
             if (payload.action === 'closed' && existing) {
               const labels = existing.labels.map(l => l.name);
               if (!labels.includes('do-not-autoclose')) {
