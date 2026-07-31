@@ -1,0 +1,79 @@
+name: Remove Unused Branches
+
+on:
+  schedule:
+    # Berjalan setiap tanggal 1 setiap bulannya pada pukul 00:00 UTC
+    - cron: '0 0 1 * *'
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - name: Generate Bot Token
+        id: bot_token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Hapus Branch yang Tidak Terpakai di PR (Kecuali Main & Tester)
+        env:
+          GITHUB_TOKEN: ${{ steps.bot_token.outputs.token || secrets.GITHUB_TOKEN }}
+        run: |
+          echo "=========================================="
+          echo " Memulai pembersihan branch tidak terpakai"
+          echo "=========================================="
+
+          # 1. Ambil daftar branch remote terbaru
+          git fetch --prune
+
+          # 2. Ambil daftar branch yang saat ini memiliki PR berstatus 'open' dari GitHub API
+          echo "Mengambil daftar branch yang memiliki PR aktif..."
+          OPEN_PR_BRANCHES=$(curl -s \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls?state=open&per_page=100" \
+            | jq -r '.[].head.ref')
+
+          echo "Branch dengan PR aktif:"
+          echo "$OPEN_PR_BRANCHES"
+          echo "------------------------------------------"
+
+          # 3. Loop melalui semua branch remote (mengabaikan prefix 'origin/')
+          for remote_branch in $(git branch -r | grep -v 'HEAD' | sed 's|origin/||'); do
+            # Bersihkan spasi kosong
+            branch=$(echo "$remote_branch" | xargs)
+
+            # ATURAN AMAN: Jangan pernah hapus branch main, tester, atau branch saat ini
+            if [ "$branch" = "main" ] || [ "$branch" = "tester" ]; then
+              echo "🔒 Melindungi branch utama/penting: $branch"
+              continue
+            fi
+
+            # Cek apakah branch ini sedang dipakai oleh PR yang masih open
+            is_in_open_pr=false
+            if echo "$OPEN_PR_BRANCHES" | grep -qx "$branch"; then
+              is_in_open_pr=true
+            fi
+
+            # Jika branch tidak masuk dalam daftar PR open, eksekusi penghapusan
+            if [ "$is_in_open_pr" = "false" ]; then
+              echo "🗑️ Branch '$branch' tidak memiliki PR aktif. Menghapus..."
+              git push origin --delete "$branch" || echo "Gagal menghapus branch $branch (mungkin sudah terhapus)."
+            else
+              echo "🛡️ Branch '$branch' dilewati karena masih memiliki PR aktif yang terbuka."
+            fi
+          done
+
+          echo "=========================================="
+          echo " Pembersihan branch selesai dijalankan."
+          echo "=========================================="
