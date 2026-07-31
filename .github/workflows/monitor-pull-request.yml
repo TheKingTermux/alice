@@ -91,9 +91,16 @@ jobs:
           # --- DEBUGGING LOG ---
           echo "Event: $GH_EVENT_NAME | Action: $GH_ACTION | API Merged: $PR_IS_MERGED | State: $PR_STATE | Review State: $GH_REVIEW_STATE"
 
-          # --- EVALUASI KONDISI DENGAN PRIORITAS UTAMA MERGE ---
+          # --- EVALUASI KONDISI DENGAN URUTAN YANG BENAR ---
           
-          if [ "$PR_IS_MERGED" = "true" ]; then
+          # 1. Cek Approved Dulu (Hijau)
+          if [ "$GH_EVENT_NAME" = "pull_request_review" ] && [ "$GH_REVIEW_STATE" = "approved" ]; then
+            echo "COLOR=3066993" >> $GITHUB_ENV # 🟩 Hijau (Approved)
+            echo "TITLE=✅ Audit Selesai: Kontrak Mendapat Sertifikasi [#Approved]" >> $GITHUB_ENV
+            echo "DESC=Kabar baik. Salah satu pengawas keuangan senior kita telah memeriksa struktur amandemen ini dan memberikan tanda sepakat. Jalan menuju merger semakin terbuka lebar." >> $GITHUB_ENV
+
+          # 2. Baru Cek Merged (Ungu) - Berjalan ketika tombol Merge diklik
+          elif [ "$PR_IS_MERGED" = "true" ]; then
             echo "COLOR=10181046" >> $GITHUB_ENV # 🟪 Ungu (Merged)
             echo "TITLE=🤝 Kontrak Disetujui dan Disahkan [#Merged]" >> $GITHUB_ENV
             echo "DESC=Kesepakatan telah dicapai! Draf proposal ini resmi digabungkan ke dalam cabang utama. Kerja sama yang sangat menguntungkan." >> $GITHUB_ENV
@@ -115,15 +122,9 @@ jobs:
             echo "DESC=Mitra bisnis kita baru saja mengirimkan lembar amandemen kodingan baru ke dalam proposal ini. Jade Chamber akan langsung menghitung ulang nilai aset dan memeriksa statistik perubahan terbarunya." >> $GITHUB_ENV
 
           elif [ "$GH_EVENT_NAME" = "pull_request" ] && [ "$GH_ACTION" = "closed" ]; then
-            # Karena kondisi PR_IS_MERGED=true sudah dicek di paling atas, jika lolos ke sini berarti murni Closed/Ditolak
-            echo "COLOR=15158332" >> $GITHUB_ENV # 🟥 Merah (Closed tanpa Merge)
+            echo "COLOR=15158332" >> $GITHUB_ENV # 🟥 Merah (Closed tanpa Merge / Ditolak)
             echo "TITLE=❌ Proposal Kontrak Ditolak [#Closed]" >> $GITHUB_ENV
             echo "DESC=Setelah pertimbangan yang matang di Jade Chamber, investasi kode ini dinilai tidak membawa keuntungan bagi kestabilan proyek. Berkas dibatalkan." >> $GITHUB_ENV
-
-          elif [ "$GH_EVENT_NAME" = "pull_request_review" ] && [ "$GH_REVIEW_STATE" = "approved" ]; then
-            echo "COLOR=3066993" >> $GITHUB_ENV # 🟩 Hijau (Approved)
-            echo "TITLE=✅ Audit Selesai: Kontrak Mendapat Sertifikasi [#Approved]" >> $GITHUB_ENV
-            echo "DESC=Kabar baik. Salah satu pengawas keuangan senior kita telah memeriksa struktur amandemen ini dan memberikan tanda sepakat. Jalan menuju merger semakin terbuka lebar." >> $GITHUB_ENV
 
           elif [ "$GH_EVENT_NAME" = "pull_request_review" ] && [ "$GH_REVIEW_STATE" = "changes_requested" ]; then
             echo "COLOR=15158332" >> $GITHUB_ENV # 🟥 Merah (Changes Requested)
