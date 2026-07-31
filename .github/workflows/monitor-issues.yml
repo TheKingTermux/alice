@@ -60,14 +60,9 @@ jobs:
             FIELD_VALUE="\`$ACTOR\`"
           fi
 
-          # Link Avatar Fandom Resmi (Aman dari rendering crash)
-          FURINA_AVATAR="https://nocookie.net"
-          NEUVI_AVATAR="https://nocookie.net"
-
           # 1. TIM FURINA DE FONTAINE (Menembak ke DISCORD_WEBHOOK_COMMENTS)
           jq -n \
             --arg username "Furina de Fontaine" \
-            --arg avatar "$FURINA_AVATAR" \
             --arg title "🎭 Panggung Teater Furina: Interupsi Sidang!" \
             --arg desc "$FURINA_DIALOG" \
             --arg repo_name "$REPO_NAME" \
@@ -79,7 +74,6 @@ jobs:
             --arg f_val "$FIELD_VALUE" \
             '{
               username: $username,
-              avatar_url: $avatar,
               embeds: [{
                 title: $title,
                 description: $desc,
@@ -101,7 +95,6 @@ jobs:
           # 2. TIM IUDEX NEUVILLETTE (Menembak ke DISCORD_WEBHOOK_ISSUES)
           jq -n \
             --arg username "Iudex Neuvillette" \
-            --arg avatar "$NEUVI_AVATAR" \
             --arg title "⚖️ Pengadilan Fontaine: Tanggapan Kehakiman" \
             --arg desc "$NEUVI_DIALOG" \
             --arg repo_name "$REPO_NAME" \
@@ -111,7 +104,6 @@ jobs:
             --arg issue_url "$ISSUE_URL" \
             '{
               username: $username,
-              avatar_url: $avatar,
               embeds: [{
                 title: $title,
                 description: $desc,
