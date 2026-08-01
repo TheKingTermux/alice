@@ -17,7 +17,7 @@ jobs:
         id: bot_token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.BOT_APP_ID }}
+          client-id: ${{ secrets.BOT_APP_ID }} # Diubah dari app-id ke client-id agar tidak deprecation
           private-key: ${{ secrets.BOT_PRIVATE_KEY }}
 
       - name: Checkout Repository
@@ -101,7 +101,7 @@ jobs:
               FIELD_VAL="$DELETED_LIST"
             fi
 
-            # Menggunakan --arg secara aman untuk mencegah Unix shell quoting issues
+            # Argumen bersih tanpa sisa pemanggilan variable username lama
             jq -n \
               --arg title "🌿 Pembersihan Dahan Irminsul Berkala" \
               --arg desc "$DESC" \
@@ -109,7 +109,6 @@ jobs:
               --arg repo "${{ github.repository }}" \
               --arg footer_text "💎 'Pengetahuan adalah kekuatan, bersihkan memori yang membebani.'" \
               '{
-                username: $username,
                 embeds: [{
                   title: $title,
                   description: $desc,
