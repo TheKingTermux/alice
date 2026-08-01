@@ -17,7 +17,7 @@ jobs:
         id: bot_token
         uses: actions/create-github-app-token@v3
         with:
-          client-id: ${{ secrets.BOT_APP_ID }} # Diubah dari app-id ke client-id agar tidak deprecation
+          client-id: ${{ secrets.BOT_APP_ID }}
           private-key: ${{ secrets.BOT_PRIVATE_KEY }}
 
       - name: Checkout Repository
@@ -77,7 +77,8 @@ jobs:
               echo "✂️ Dahan '$branch' kehilangan ikatan dengan draf aktif. Memangkas memori lama..."
               if git push origin --delete "$branch"; then
                 DELETED_COUNT=$((DELETED_COUNT + 1))
-                DELETED_LIST="${DELETED_LIST}• \`${branch}\`\n"
+                # Pakai printf biar \n jadi baris baru beneran
+                DELETED_LIST=$(printf "%s• \`%s\`\n" "$DELETED_LIST" "$branch")
               else
                 echo "Gagal membersihkan dahan $branch (mungkin sudah gugur sebelumnya)."
               fi
@@ -94,14 +95,15 @@ jobs:
           # 4. Kirim Laporan ke Discord jika Webhook URL tersedia
           if [ -n "$DISCORD_URL" ]; then
             if [ $DELETED_COUNT -eq 0 ]; then
-              DESC="🌸 **Laporan Pemangkasan Irminsul**\n\nSemua dahan kode masih bertunas dengan baik! Tidak ada branch tak terpakai yang perlu dipangkas kali ini."
+              # Pakai printf untuk mengeksekusi enter beneran
+              DESC=$(printf "🌸 **Laporan Pemangkasan Irminsul**\n\nSemua dahan kode masih bertunas dengan baik! Tidak ada branch tak terpakai yang perlu dipangkas kali ini.")
               FIELD_VAL="*Tidak ada branch yang dihapus.*"
             else
-              DESC="🌸 **Laporan Pemangkasan Irminsul**\n\nBerhasil memangkas **$DELETED_COUNT** dahan/branch mati yang tidak terikat pada PR aktif."
+              # Pakai printf untuk mengeksekusi enter beneran
+              DESC=$(printf "🌸 **Laporan Pemangkasan Irminsul**\n\nBerhasil memangkas **%d** dahan/branch mati yang tidak terikat pada PR aktif." "$DELETED_COUNT")
               FIELD_VAL="$DELETED_LIST"
             fi
 
-            # Argumen bersih tanpa sisa pemanggilan variable username lama
             jq -n \
               --arg title "🌿 Pembersihan Dahan Irminsul Berkala" \
               --arg desc "$DESC" \
