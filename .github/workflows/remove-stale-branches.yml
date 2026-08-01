@@ -51,13 +51,12 @@ jobs:
           echo "$OPEN_PR_BRANCHES"
           echo "------------------------------------------"
 
-          # Variabel untuk mencatat hasil pembersihan buat laporan Discord
+          # Tempat penampung sementara file daftar branch
+          echo -n "" > branch_list.txt
           DELETED_COUNT=0
-          DELETED_LIST=""
 
           # 3. Loop melalui semua branch remote (mengabaikan prefix 'origin/')
           for remote_branch in $(git branch -r | grep -v 'HEAD' | sed 's|origin/||'); do
-            # Bersihkan spasi kosong
             branch=$(echo "$remote_branch" | xargs)
 
             # ATURAN AMAN: Jangan pernah hapus branch main, tester, atau branch saat ini
@@ -66,19 +65,16 @@ jobs:
               continue
             fi
 
-            # Cek apakah branch ini sedang dipakai oleh PR yang masih open
             is_in_open_pr=false
             if echo "$OPEN_PR_BRANCHES" | grep -qx "$branch"; then
               is_in_open_pr=true
             fi
 
-            # Jika branch tidak masuk dalam daftar PR open, eksekusi penghapusan
             if [ "$is_in_open_pr" = "false" ]; then
               echo "✂️ Dahan '$branch' kehilangan ikatan dengan draf aktif. Memangkas memori lama..."
               if git push origin --delete "$branch"; then
                 DELETED_COUNT=$((DELETED_COUNT + 1))
-                # Pakai printf biar \n jadi baris baru beneran
-                DELETED_LIST=$(printf "%s• \`%s\`\n" "$DELETED_LIST" "$branch")
+                echo "• \`$branch\`" >> branch_list.txt
               else
                 echo "Gagal membersihkan dahan $branch (mungkin sudah gugur sebelumnya)."
               fi
@@ -92,39 +88,54 @@ jobs:
           echo "🌸 'Semua memori yang tidak berguna telah dibersihkan.'"
           echo "============================================"
 
-          # 4. Kirim Laporan ke Discord jika Webhook URL tersedia
-          if [ -n "$DISCORD_URL" ]; then
-            if [ $DELETED_COUNT -eq 0 ]; then
-              # Pakai printf untuk mengeksekusi enter beneran
-              DESC=$(printf "🌸 **Laporan Pemangkasan Irminsul**\n\nSemua dahan kode masih bertunas dengan baik! Tidak ada branch tak terpakai yang perlu dipangkas kali ini.")
-              FIELD_VAL="*Tidak ada branch yang dihapus.*"
-            else
-              # Pakai printf untuk mengeksekusi enter beneran
-              DESC=$(printf "🌸 **Laporan Pemangkasan Irminsul**\n\nBerhasil memangkas **%d** dahan/branch mati yang tidak terikat pada PR aktif." "$DELETED_COUNT")
-              FIELD_VAL="$DELETED_LIST"
-            fi
+          # 4. Amankan pengisian variabel multiline menggunakan fitur Heredoc GITHUB_ENV
+          if [ $DELETED_COUNT -eq 0 ]; then
+            echo "FIELD_VAL=*Tidak ada branch yang dihapus.*" >> $GITHUB_ENV
+            echo "DESC<<EOF" >> $GITHUB_ENV
+          🌸 **Laporan Pemangkasan Irminsul**
 
-            jq -n \
-              --arg title "🌿 Pembersihan Dahan Irminsul Berkala" \
-              --arg desc "$DESC" \
-              --arg deleted_val "$FIELD_VAL" \
-              --arg repo "${{ github.repository }}" \
-              --arg footer_text "💎 'Pengetahuan adalah kekuatan, bersihkan memori yang membebani.'" \
-              '{
-                embeds: [{
-                  title: $title,
-                  description: $desc,
-                  color: 5832732,
-                  fields: [
-                    { name: "📁 Repositori", value: ("`" + $repo + "`"), inline: false },
-                    { name: "✂️ Daftar Branch yang Dipangkas", value: $deleted_val, inline: false }
-                  ],
-                  footer: { text: $footer_text }
-                }]
-              }' > discord_prune_payload.json
-
-            curl -H "Content-Type: application/json" -X POST -d @discord_prune_payload.json "$DISCORD_URL"
-            echo "📬 Laporan berhasil dikirim ke saluran Discord!"
+          Semua dahan kode masih bertunas dengan baik! Tidak ada branch tak terpakai yang perlu dipangkas kali ini.
+          EOF
           else
-            echo "⚠️ DISCORD_WEBHOOK_PRUNE belum diisi di Secrets, melewati pengiriman notifikasi."
+            {
+              echo "FIELD_VAL<<EOF"
+              cat branch_list.txt
+              echo "EOF"
+            } >> $GITHUB_ENV
+
+            {
+              echo "DESC<<EOF"
+              echo "🌸 **Laporan Pemangkasan Irminsul**"
+              echo ""
+              echo "Berhasil memangkas **$DELETED_COUNT** dahan/branch mati yang tidak terikat pada PR aktif."
+              echo "EOF"
+            } >> $GITHUB_ENV
           fi
+
+      - name: Kirim Notifikasi ke Discord
+        if: env.DISCORD_URL != ''
+        env:
+          DISCORD_URL: ${{ secrets.DISCORD_WEBHOOK_PRUNE }}
+        run: |
+          # Menggunakan env context shell secara native, dijamin aman dari masalah escape kutip shell!
+          jq -n \
+            --arg title "🌿 Pembersihan Dahan Irminsul Berkala" \
+            --arg desc "$DESC" \
+            --arg deleted_val "$FIELD_VAL" \
+            --arg repo "${{ github.repository }}" \
+            --arg footer_text "💎 'Pengetahuan adalah kekuatan, bersihkan memori yang membebani.'" \
+            '{
+              embeds: [{
+                title: $title,
+                description: $desc,
+                color: 5832732,
+                fields: [
+                  { name: "📁 Repositori", value: ("`" + $repo + "`"), inline: false },
+                  { name: "✂️ Daftar Branch yang Dipangkas", value: $deleted_val, inline: false }
+                ],
+                footer: { text: $footer_text }
+              }]
+            }' > discord_prune_payload.json
+
+          curl -H "Content-Type: application/json" -X POST -d @discord_prune_payload.json "$DISCORD_URL"
+          echo "📬 Laporan rapi berhasil dikirim ke saluran Discord!"
