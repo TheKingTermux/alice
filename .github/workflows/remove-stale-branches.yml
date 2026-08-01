@@ -25,10 +25,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Pembersihan Dahan Irminsul oleh Nahida
+      - name: Pembersihan Irminsul & Notifikasi Discord
         env:
           GITHUB_TOKEN: ${{ steps.bot_token.outputs.token || secrets.GITHUB_TOKEN }}
           DISCORD_URL: ${{ secrets.DISCORD_WEBHOOK_PRUNE }}
+          EVENT_NAME: ${{ github.event_name }}
+          ACTOR: ${{ github.actor }}
         run: |
           echo "🌿 =========================================="
           echo " 🍃 Terminal Kesadaran Irminsul: Aktif"
@@ -39,7 +41,7 @@ jobs:
           # 1. Ambil daftar branch remote terbaru
           git fetch --prune
 
-          # 2. Ambil daftar branch yang saat ini memiliki PR berstatus 'open' dari GitHub API
+          # 2. Ambil daftar branch yang saat ini memiliki PR berstatus 'open'
           echo "🔍 Menghubungkan kesadaran untuk memindai PR yang masih terbuka..."
           OPEN_PR_BRANCHES=$(curl -s \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
@@ -47,21 +49,14 @@ jobs:
             "https://api.github.com/repos/${{ github.repository }}/pulls?state=open&per_page=100" \
             | jq -r '.[].head.ref')
 
-          echo "Draf kontrak (PR aktif) yang ditemukan di dahan utama:"
-          echo "$OPEN_PR_BRANCHES"
-          echo "------------------------------------------"
-
-          # Tempat penampung sementara file daftar branch
-          echo -n "" > branch_list.txt
           DELETED_COUNT=0
+          DELETED_LIST=""
 
-          # 3. Loop melalui semua branch remote (mengabaikan prefix 'origin/')
+          # 3. Eksekusi pembersihan
           for remote_branch in $(git branch -r | grep -v 'HEAD' | sed 's|origin/||'); do
             branch=$(echo "$remote_branch" | xargs)
 
-            # ATURAN AMAN: Jangan pernah hapus branch main, tester, atau branch saat ini
             if [ "$branch" = "main" ] || [ "$branch" = "tester" ] || [ "$branch" = "testing" ]; then
-              echo "🌱 Melindungi dahan suci sumber kehidupan: $branch"
               continue
             fi
 
@@ -71,57 +66,28 @@ jobs:
             fi
 
             if [ "$is_in_open_pr" = "false" ]; then
-              echo "✂️ Dahan '$branch' kehilangan ikatan dengan draf aktif. Memangkas memori lama..."
+              echo "✂️ Memangkas dahan: $branch..."
               if git push origin --delete "$branch"; then
                 DELETED_COUNT=$((DELETED_COUNT + 1))
-                echo "• \`$branch\`" >> branch_list.txt
-              else
-                echo "Gagal membersihkan dahan $branch (mungkin sudah gugur sebelumnya)."
+                DELETED_LIST="$DELETED_LIST• \`$branch\`"$'\n'
               fi
-            else
-              echo "🍃 Dahan '$branch' dibiarkan tumbuh karena masih merajut kontrak aktif (PR Open)."
             fi
           done
 
           echo "============================================"
           echo "✨ Pembersihan Irminsul selesai!"
-          echo "🌸 'Semua memori yang tidak berguna telah dibersihkan.'"
           echo "============================================"
 
-          # 4. Amankan pengisian variabel multiline menggunakan fitur Heredoc GITHUB_ENV
+          # 4. Pembentukan Pesan Laporan pakai $'\n'
           if [ $DELETED_COUNT -eq 0 ]; then
-            echo "FIELD_VAL=*Tidak ada branch yang dihapus.*" >> $GITHUB_ENV
-            echo "DESC<<EOF" >> $GITHUB_ENV
-          🌸 **Laporan Pemangkasan Irminsul**
-
-          Semua dahan kode masih bertunas dengan baik! Tidak ada branch tak terpakai yang perlu dipangkas kali ini.
-          EOF
+            DESC="🌸 **Laporan Pemangkasan Irminsul**"$'\n\n'"Semua dahan kode masih bertunas dengan baik! Tidak ada branch tak terpakai yang perlu dipangkas kali ini."
+            FIELD_VAL="*Tidak ada branch yang dihapus.*"
           else
-            {
-              echo "FIELD_VAL<<EOF"
-              cat branch_list.txt
-              echo "EOF"
-            } >> $GITHUB_ENV
-
-            {
-              echo "DESC<<EOF"
-              echo "🌸 **Laporan Pemangkasan Irminsul**"
-              echo ""
-              echo "Berhasil memangkas **$DELETED_COUNT** dahan/branch mati yang tidak terikat pada PR aktif."
-              echo "EOF"
-            } >> $GITHUB_ENV
+            DESC="🌸 **Laporan Pemangkasan Irminsul**"$'\n\n'"Berhasil memangkas **$DELETED_COUNT** dahan/branch mati yang tidak terikat pada PR aktif."
+            FIELD_VAL="$DELETED_LIST"
           fi
 
-      - name: Kirim Notifikasi ke Discord
-        if: env.DISCORD_URL != ''
-        env:
-          DISCORD_URL: ${{ secrets.DISCORD_WEBHOOK_PRUNE }}
-          EVENT_NAME: ${{ github.event_name }}
-          ACTOR: ${{ github.actor }}
-        run: |
-          # ----------------------------------------------------
-          # Adaptasi Logika "Kesaksian" Menjadi Versi Nahida
-          # ----------------------------------------------------
+          # 5. Adaptasi Pemicu Event
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             FIELD_TRIGGER_NAME="👤 Pengakses Terminal"
             FIELD_TRIGGER_VALUE="\`$ACTOR\` (Manual)"
@@ -130,28 +96,32 @@ jobs:
             FIELD_TRIGGER_VALUE="\`Jadwal Otomatis (Cron)\`"
           fi
 
-          # Menggunakan env context shell secara native
-          jq -n \
-            --arg title "🌿 Pembersihan Dahan Irminsul Berkala" \
-            --arg desc "$DESC" \
-            --arg deleted_val "$FIELD_VAL" \
-            --arg repo "${{ github.repository }}" \
-            --arg trigger_name "$FIELD_TRIGGER_NAME" \
-            --arg trigger_val "$FIELD_TRIGGER_VALUE" \
-            --arg footer_text "💎 'Pengetahuan adalah kekuatan, bersihkan memori yang membebani.'" \
-            '{
-              embeds: [{
-                title: $title,
-                description: $desc,
-                color: 5832732,
-                fields: [
-                  { name: "📁 Repositori", value: ("`" + $repo + "`"), inline: true },
-                  { name: $trigger_name, value: $trigger_val, inline: true },
-                  { name: "✂️ Daftar Branch yang Dipangkas", value: $deleted_val, inline: false }
-                ],
-                footer: { text: $footer_text }
-              }]
-            }' > discord_prune_payload.json
+          # 6. Kirim Laporan via JQ
+          if [ -n "$DISCORD_URL" ]; then
+            jq -n \
+              --arg title "🌿 Pembersihan Dahan Irminsul Berkala" \
+              --arg desc "$DESC" \
+              --arg deleted_val "$FIELD_VAL" \
+              --arg repo "${{ github.repository }}" \
+              --arg trigger_name "$FIELD_TRIGGER_NAME" \
+              --arg trigger_val "$FIELD_TRIGGER_VALUE" \
+              --arg footer_text "💎 'Pengetahuan adalah kekuatan, bersihkan memori yang membebani.'" \
+              '{
+                embeds: [{
+                  title: $title,
+                  description: $desc,
+                  color: 5832732,
+                  fields: [
+                    { name: "📁 Repositori", value: ("`" + $repo + "`"), inline: true },
+                    { name: $trigger_name, value: $trigger_val, inline: true },
+                    { name: "✂️ Daftar Branch yang Dipangkas", value: $deleted_val, inline: false }
+                  ],
+                  footer: { text: $footer_text }
+                }]
+              }' > discord_prune_payload.json
 
-          curl -H "Content-Type: application/json" -X POST -d @discord_prune_payload.json "$DISCORD_URL"
-          echo "📬 Laporan rapi berhasil dikirim ke saluran Discord!"
+            curl -H "Content-Type: application/json" -X POST -d @discord_prune_payload.json "$DISCORD_URL"
+            echo "📬 Laporan rapi berhasil dikirim ke saluran Discord!"
+          else
+            echo "⚠️ DISCORD_WEBHOOK_PRUNE belum diisi di Secrets, melewati pengiriman notifikasi."
+          fi
