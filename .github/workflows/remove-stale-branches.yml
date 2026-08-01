@@ -61,7 +61,7 @@ jobs:
             branch=$(echo "$remote_branch" | xargs)
 
             # ATURAN AMAN: Jangan pernah hapus branch main, tester, atau branch saat ini
-            if [ "$branch" = "main" ] || [ "$branch" = "tester" ]; then
+            if [ "$branch" = "main" ] || [ "$branch" = "tester" ] || [ "$branch" = "testing" ]; then
               echo "🌱 Melindungi dahan suci sumber kehidupan: $branch"
               continue
             fi
@@ -77,7 +77,7 @@ jobs:
               echo "✂️ Dahan '$branch' kehilangan ikatan dengan draf aktif. Memangkas memori lama..."
               if git push origin --delete "$branch"; then
                 DELETED_COUNT=$((DELETED_COUNT + 1))
-                DELETED_LIST="$DELETED_LIST• \`$branch\`"$'\n'
+                DELETED_LIST="${DELETED_LIST}• \`${branch}\`\n"
               else
                 echo "Gagal membersihkan dahan $branch (mungkin sudah gugur sebelumnya)."
               fi
@@ -101,12 +101,14 @@ jobs:
               FIELD_VAL="$DELETED_LIST"
             fi
 
+            # Menggunakan --arg secara aman untuk mencegah Unix shell quoting issues
             jq -n \
               --arg username "Lesser Lord Kusanali" \
               --arg title "🌿 Pembersihan Dahan Irminsul Berkala" \
               --arg desc "$DESC" \
               --arg deleted_val "$FIELD_VAL" \
               --arg repo "${{ github.repository }}" \
+              --arg footer_text "💎 'Pengetahuan adalah kekuatan, bersihkan memori yang membebani.'" \
               '{
                 username: $username,
                 embeds: [{
@@ -117,7 +119,7 @@ jobs:
                     { name: "📁 Repositori", value: ("`" + $repo + "`"), inline: false },
                     { name: "✂️ Daftar Branch yang Dipangkas", value: $deleted_val, inline: false }
                   ],
-                  footer: { text: "💎 'Pengetahuan adalah kekuatan, bersihkan memori yang membebani.'" }
+                  footer: { text: $footer_text }
                 }]
               }' > discord_prune_payload.json
 
