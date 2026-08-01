@@ -103,7 +103,6 @@ jobs:
 
             # Menggunakan --arg secara aman untuk mencegah Unix shell quoting issues
             jq -n \
-              --arg username "Lesser Lord Kusanali" \
               --arg title "🌿 Pembersihan Dahan Irminsul Berkala" \
               --arg desc "$DESC" \
               --arg deleted_val "$FIELD_VAL" \
