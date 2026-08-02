@@ -80,10 +80,10 @@ jobs:
 
           # 4. Pembentukan Pesan Laporan pakai $'\n'
           if [ $DELETED_COUNT -eq 0 ]; then
-            DESC="🌸 **Laporan Pemangkasan Irminsul**"$'\n'"Semua dahan kode masih bertunas dengan baik! Tidak ada branch tak terpakai yang perlu dipangkas kali ini."
+            DESC="🌸 **Laporan Pemangkasan Irminsul**"$'\n\n'"Semua dahan kode masih bertunas dengan baik! Tidak ada branch tak terpakai yang perlu dipangkas kali ini."
             FIELD_VAL="*Tidak ada branch yang dihapus.*"
           else
-            DESC="🌸 **Laporan Pemangkasan Irminsul**"$'\n'"Berhasil memangkas **$DELETED_COUNT** dahan/branch mati yang tidak terikat pada PR aktif."
+            DESC="🌸 **Laporan Pemangkasan Irminsul**"$'\n\n'"Berhasil memangkas **$DELETED_COUNT** dahan/branch mati yang tidak terikat pada PR aktif."
             FIELD_VAL="$DELETED_LIST"
           fi
 
@@ -110,7 +110,7 @@ jobs:
                 embeds: [{
                   title: $title,
                   description: $desc,
-                  color: 5832732,
+                  color: 11927387, # Warna Hijau Nahida Autentik (Desimal dari #B5FF5B)
                   fields: [
                     { name: "📁 Repositori", value: ("`" + $repo + "`"), inline: true },
                     { name: $trigger_name, value: $trigger_val, inline: true },
