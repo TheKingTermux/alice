@@ -34,7 +34,7 @@ jobs:
           path: '.github/CODEOWNERS'
 
       - name: Auto Merge via Bot (Wait for LGTM / Approve / Request Changes)
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           github-token: ${{ steps.bot_token.outputs.token }}
           script: |
