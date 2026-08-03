@@ -17,7 +17,6 @@ jobs:
       statuses: read
 
     steps:
-      # 1. Amankan Token Bot Terlebih Dahulu dengan Benar
       - name: Generate Bot Token
         id: bot_token
         uses: actions/create-github-app-token@v3
@@ -25,10 +24,8 @@ jobs:
           client-id: ${{ secrets.BOT_APP_ID }}
           private-key: ${{ secrets.BOT_PRIVATE_KEY }}
 
-      # 2. Ambil Berkas Repositori
       - uses: actions/checkout@v7
 
-      # 3. Validasi Pemilik Kode (Gunakan token bot agar punya hak bypass)
       - name: Run Codeowners merge check
         uses: OSS-Docs-Tools/code-owner-self-merge@1.6.8
         env:
@@ -36,36 +33,93 @@ jobs:
         with:
           path: '.github/CODEOWNERS'
 
-      # 4. Eksekusi Penggabungan Otomatis via API Script
-      - name: Auto Merge via Bot
+      - name: Auto Merge via Bot (Wait for LGTM / Approve / Request Changes)
         uses: actions/github-script@v7
         with:
           github-token: ${{ steps.bot_token.outputs.token }}
           script: |
             const { owner, repo } = context.repo;
-            // Deteksi nomor PR baik dari event PR langsung atau dari komentar issue/PR
-            const pull_number = context.payload.pull_request ? context.payload.pull_request.number : context.payload.issue.number;
+            const payload = context.payload;
+            const eventName = context.eventName;
+            
+            let shouldMerge = false;
+            
+            const pull_number = payload.pull_request ? payload.pull_request.number : (payload.issue ? payload.issue.number : null);
+            
+            if (!pull_number) {
+              console.log("Bukan event Pull Request, melewati...");
+              return;
+            }
 
-            console.log(`Memeriksa status otorisasi untuk PR #${pull_number}...`);
+            console.log(`Menganalisis pemicu untuk PR #${pull_number}... (Event: ${eventName})`);
 
-            const pr = await github.rest.pulls.get({
-              owner,
-              repo,
-              pull_number,
-            });
+            // Ambil info pembuat PR (author)
+            const prData = await github.rest.pulls.get({ owner, repo, pull_number });
+            const prAuthor = prData.data.user.login;
 
-            if (pr.data.state !== 'closed' && !pr.data.merged) {
-              console.log(`Melakukan penggabungan otomatis (Merge) untuk PR #${pull_number}...`);
+            // 1. SKENARIO KOMEN: Cek apakah TheKingTermux komen "LGTM"
+            if (eventName === 'issue_comment' && payload.action === 'created') {
+              const commentBody = payload.comment.body.trim().toUpperCase();
+              const commenter = payload.comment.user.login;
               
-              await github.rest.pulls.merge({
-                owner,
-                repo,
-                pull_number,
-                merge_method: 'merge',
-                commit_message: 'Otomatis: Merge Pull Request oleh Bot'
-              });
+              if (commentBody.includes('LGTM') && commenter === 'TheKingTermux') {
+                console.log("🟢 Titah 'LGTM' diterima dari sang Code Owner!");
+                shouldMerge = true;
+              } else {
+                console.log(`Komen dari ${commenter} diabaikan (Bukan LGTM atau bukan TheKingTermux).`);
+              }
+            }
+
+            // 2. SKENARIO REVIEW: Cek status Approve ATAU Request Changes
+            if (eventName === 'pull_request_review' && payload.action === 'submitted') {
+              const reviewState = payload.review.state.toLowerCase();
+              const reviewer = payload.review.user.login;
               
-              console.log(`Berhasil! PR #${pull_number} telah digabungkan.`);
-            } else {
-              console.log(`PR #${pull_number} sudah tertutup atau sudah di-merge.`);
+              if (reviewer === 'TheKingTermux') {
+                if (reviewState === 'approved') {
+                  console.log("🟢 Restu 'Approve' diberikan oleh sang Code Owner!");
+                  shouldMerge = true;
+                } 
+                // JIKA TERDETEKSI REQUEST CHANGES
+                else if (reviewState === 'changes_requested') {
+                  console.log("⚠️ Code Owner meminta perubahan kode (Changes Requested). Menyiapkan pemanggilan...");
+                  
+                  const alertMessage = `⚠️ **Review Update:** @${reviewer} meminta perubahan pada dahan kode ini!\n\nOi @${prAuthor}, mohon segera periksa kembali kiriman kontrak (PR) Anda dan lakukan perbaikan sesuai catatan yang diberikan. 🛠️`;
+                  
+                  await github.rest.issues.createComment({
+                    owner,
+                    repo,
+                    issue_number: pull_number,
+                    body: alertMessage
+                  });
+                  
+                  console.log(`📢 Berhasil menandai @${prAuthor} dan @${reviewer} di kolom komentar.`);
+                  return; // Hentikan script, tidak perlu lanjut ke proses merge
+                }
+              } else {
+                console.log(`Review dari ${reviewer} dengan status '${reviewState}' diabaikan.`);
+              }
+            }
+
+            // Kalau bukan perintah merge yang valid, berhentikan bot
+            if (!shouldMerge) {
+              console.log("⏳ Bot menahan diri. Menunggu tindakan lebih lanjut dari TheKingTermux...");
+              return;
+            }
+
+            // Eksekusi Merge jika sudah mendapat restu
+            if (prData.data.state !== 'closed' && !prData.data.merged) {
+              console.log(`Mengeksekusi penggabungan (Merge) untuk PR #${pull_number}...`);
+              try {
+                await github.rest.pulls.merge({
+                  owner,
+                  repo,
+                  pull_number,
+                  merge_method: 'merge',
+                  commit_message: 'Otomatis: Merge Pull Request atas restu Code Owner'
+                });
+                console.log(`✅ Berhasil! PR #${pull_number} telah digabungkan.`);
+              } catch (error) {
+                console.log(`❌ Gagal melakukan merge: ${error.message}`);
+              }
             }
