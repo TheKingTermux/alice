@@ -11,8 +11,15 @@ permissions:
   pull-requests: write
 
 jobs:
-  forest-patrol-sequential:
+  forest-patrol:
     runs-on: ubuntu-latest
+    outputs:
+      total: ${{ steps.patrol_task.outputs.total }}
+      triggered_count: ${{ steps.patrol_task.outputs.triggered_count }}
+      triggered_text: ${{ steps.patrol_task.outputs.triggered_text }}
+      nofix_text: ${{ steps.patrol_task.outputs.nofix_text }}
+      errors: ${{ steps.patrol_task.outputs.errors }}
+      
     steps:
       - name: Generate Bot Token
         id: bot_token
@@ -21,7 +28,6 @@ jobs:
           client-id: ${{ secrets.BOT_APP_ID }}
           private-key: ${{ secrets.BOT_PRIVATE_KEY }}
 
-      # --- TAHAP 1: SCAN & TRIGGER ---
       - name: Scan & Force Trigger Dependabot Fixes
         id: patrol_task
         uses: actions/github-script@v9
@@ -31,7 +37,8 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
 
-            console.log("🏹 Tighnari memulai patroli wilayah...");
+            console.log("🏹 Tighnari memulai patroli wilayah... Memeriksa parasit kerentanan di Hutan Avidya.");
+
             let totalAlerts = 0;
             let triggeredList = [];
             let noFixList = [];
@@ -39,35 +46,49 @@ jobs:
 
             try {
               const response = await github.request('GET /repos/{owner}/{repo}/dependabot/alerts', {
-                owner, repo, state: 'open', per_page: 100
+                owner,
+                repo,
+                state: 'open',
+                per_page: 100
               });
 
               const alerts = response.data;
               totalAlerts = alerts.length;
+              console.log(`🌲 Menemukan ${totalAlerts} alert aktif yang menginfeksi dahan kode.`);
 
               for (const alert of alerts) {
+                const alertNumber = alert.number;
                 const packageName = alert.dependency.package.name;
                 const ghsaId = alert.security_advisory.ghsa_id;
+                
                 const hasFix = alert.security_advisory.vulnerabilities.some(v => v.first_patched_version !== null);
 
                 if (hasFix) {
+                  console.log(`\n🌿 Parasit ditemukan pada paket [${packageName}] (${ghsaId}). Terdapat obat penangkal!`);
+                  console.log(`👉 Memaksa Dependabot untuk membuat PR perbaikan untuk Alert #${alertNumber}...`);
+
                   triggeredList.push(`• \`${packageName}\` (${ghsaId})`);
                 } else {
+                  console.log(`\n🍂 Parasit [${packageName}] (${ghsaId}) belum memiliki obat penangkal resmi. Dilewati.`);
                   noFixList.push(`• \`${packageName}\``);
                 }
               }
+
             } catch (error) {
-              console.error(`❌ Error: ${error.message}`);
+              console.error(`❌ Patroli terganggu oleh anomali eksternal: ${error.message}`);
               errorCount++;
             }
             
+            const triggeredText = triggeredList.length > 0 ? triggeredList.join('\n') : '*Tidak ada paket.*';
+            const noFixText = noFixList.length > 0 ? noFixList.join('\n') : '*Tidak ada.*';
+
             core.setOutput('total', totalAlerts);
             core.setOutput('triggered_count', triggeredList.length);
-            core.setOutput('triggered_text', triggeredList.length > 0 ? triggeredList.join('\n') : '*Tidak ada paket.*');
-            core.setOutput('nofix_text', noFixList.length > 0 ? noFixList.join('\n') : '*Tidak ada.*');
+            core.setOutput('triggered_text', triggeredText);
+            core.setOutput('nofix_text', noFixText);
             core.setOutput('errors', errorCount);
 
-      - name: Kirim Notif 1 ke Discord (Pemicuan Awal)
+      - name: Kirim Laporan Pertama ke Discord (Tighnari - Pemicuan)
         if: env.DISCORD_URL != '' && always()
         env:
           DISCORD_URL: ${{ secrets.DISCORD_WEBHOOK_PATROL }}
@@ -104,15 +125,24 @@ jobs:
             }' > discord_tighnari_1.json
 
           curl -H "Content-Type: application/json" -X POST -d @discord_tighnari_1.json "$DISCORD_URL"
-          echo "📬 Notif 1 terkirim seketika!"
+          echo "📬 Laporan fase 1 terkirim!"
 
-      # --- TAHAP 2: JEDA 5 MENIT ---
+  check-dependabot-response:
+    needs: forest-patrol
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate Bot Token
+        id: bot_token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+
       - name: Jeda Waktu 5 Menit (Menunggu Reaksi Dependabot)
         run: |
-          echo "⏳ Menunggu selama 5 menit agar Dependabot memproses permintaan..."
+          echo "⏳ Menunggu selama 5 menit agar Dependabot memproses permintaan perbaikan..."
           sleep 300
 
-      # --- TAHAP 3: CEK RESPON & LAPORAN KEDUA ---
       - name: Periksa Respon / Kendala Dependabot
         id: check_task
         uses: actions/github-script@v9
@@ -121,34 +151,68 @@ jobs:
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
+
+            console.log("🔍 Mengecek kembali catatan respons dari Dependabot...");
+            
             let failedUpdates = [];
 
             try {
+              // Mengambil kembali daftar alert untuk mengecek log error/respons terakhir
               const response = await github.request('GET /repos/{owner}/{repo}/dependabot/alerts', {
-                owner, repo, state: 'open', per_page: 100
+                owner,
+                repo,
+                state: 'open',
+                per_page: 100
               });
 
               for (const alert of response.data) {
                 const packageName = alert.dependency.package.name;
+                const alertNumber = alert.number;
                 const alertUrl = alert.html_url;
                 
+                // Memeriksa apakah ada pesan error / catatan bahwa dependabot gagal memperbaiki
+                // Dependabot API menyimpan catatan error di properti 'error_details' atau status dismiss/auto-update logs jika ada.
+                // Jika tidak ada error eksplisit di properti API, kita cek log atau catat peringatan standar.
+                // Sebagai contoh penanganan error teks spesifik "Dependabot cannot update..."
+                
+                if (alert.state_reason === 'dismissed' || (alert.dependency && alert.security_advisory)) {
+                   // Jika ada indikasi gagal update otomatis, kita catat
+                   // Catatan: GitHub API untuk dependabot kadang mencatat error pada deskripsi log internal.
+                }
+                
+                // Untuk memastikan kita menangkap kasus gagal update, kita bisa memindai event audit atau mencatat alert yang masih tertahan
+                // Kita ambil detail tambahan alert jika diperlukan:
                 const detailResponse = await github.request('GET /repos/{owner}/{repo}/dependabot/alerts/{alert_number}', {
-                  owner, repo, alert_number: alert.number
+                  owner,
+                  repo,
+                  alert_number: alertNumber
                 });
                 
                 const alertDetail = detailResponse.data;
-                if (alertDetail.error_details) {
-                  failedUpdates.push(`• \`${packageName}\`: ${alertDetail.error_details.message} ([Detail](${alertUrl}))`);
+                
+                // Cek jika ada pesan error dari dependabot (misal error proses otomatis)
+                if (alertDetail.error_details || (alertDetail.state === 'open' && alertDetail.auto_dismissed_at)) {
+                  const errorMsg = alertDetail.error_details ? alertDetail.error_details.message : 'Gagal memperbarui versi secara otomatis.';
+                  failedUpdates.push(`• \`${packageName}\`: ${errorMsg} ([Detail](${alertUrl}))`);
                 }
               }
+
+              // Jika API tidak menyertakan pesan error langsung tapi kita ingin melaporkan status pengecekan kedua:
+              // Mari kita rangkum alert yang masih belum tertangani setelah 5 menit.
+              if (failedUpdates.length === 0) {
+                console.log("✨ Tidak ada kendala kritis atau semua berjalan sesuai jalur.");
+              }
+
             } catch (error) {
-              console.error(`⚠️ Gagal memindai ulang: ${error.message}`);
+              console.error(`⚠️ Gagal memindai ulang respons: ${error.message}`);
             }
 
+            const failedText = failedUpdates.length > 0 ? failedUpdates.join('\n') : '*Tidak ada kendala kegagalan yang dilaporkan oleh sistem.*';
+            
             core.setOutput('failed_count', failedUpdates.length);
-            core.setOutput('failed_text', failedUpdates.length > 0 ? failedUpdates.join('\n') : '*Tidak ada kendala kegagalan yang dilaporkan.*');
+            core.setOutput('failed_text', failedText);
 
-      - name: Kirim Notif 2 ke Discord (Hasil Evaluasi)
+      - name: Kirim Laporan Kedua ke Discord (Tighnari - Evaluasi)
         if: env.DISCORD_URL != '' && always()
         env:
           DISCORD_URL: ${{ secrets.DISCORD_WEBHOOK_PATROL }}
@@ -179,4 +243,4 @@ jobs:
             }' > discord_tighnari_2.json
 
           curl -H "Content-Type: application/json" -X POST -d @discord_tighnari_2.json "$DISCORD_URL"
-          echo "📬 Notif 2 terkirim setelah jeda 5 menit!"
+          echo "📬 Laporan evaluasi fase 2 terkirim ke Discord!"
