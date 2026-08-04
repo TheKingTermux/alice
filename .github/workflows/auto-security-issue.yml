@@ -25,7 +25,7 @@ jobs:
         id: get_bug_bot_token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.BOT_APP_ID }}
+          client-id: ${{ secrets.BOT_APP_ID }} # Diubah dari app-id ke client-id
           private-key: ${{ secrets.BOT_PRIVATE_KEY }}
 
       - name: Extract info & Create/Update Issue
@@ -37,7 +37,6 @@ jobs:
           PR_URL: ${{ github.event.pull_request.html_url }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         with:
-          # Panggil token hasil generate dari step di atas
           github-token: ${{ steps.get_bug_bot_token.outputs.token }}
           script: |
             const payload = context.payload;
@@ -50,13 +49,24 @@ jobs:
             const botType = author === 'renovate[bot]' ? 'Renovate' : 'Dependabot';
 
             // ==========================================
-            // STRATEGI TAMBAHAN 1: Multi-Pattern ID Extractors (GHSA, CVE, OSV)
+            // STRATEGI TAMBAHAN 1: Multi-Pattern ID Extractors (Super Lengkap)
             // ==========================================
+            
+            // 1. GHSA ID
             const ghsaMatch = prBody.match(/(GHSA-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4})/i) || prTitle.match(/(GHSA-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4})/i);
             let ghsa = ghsaMatch ? ghsaMatch[1].toUpperCase() : 'No GHSA';
             
+            // 2. CVE ID
             const cveMatch = prBody.match(/(CVE-\d{4}-\d{4,7})/i) || prTitle.match(/(CVE-\d{4}-\d{4,7})/i);
             let cve = cveMatch ? cveMatch[1].toUpperCase() : 'No CVE';
+
+            // 3. CWE ID (Common Weakness Enumeration)
+            const cweMatch = prBody.match(/(CWE-\d+)/i) || prTitle.match(/(CWE-\d+)/i);
+            let extractedCwe = cweMatch ? cweMatch[1].toUpperCase() : null;
+
+            // 4. Alternate OSV/Ecosystem ID (Snyk, NPM, RustSec, PySec, Go, dll)
+            const osvMatch = prBody.match(/(SNYK-[a-zA-Z0-9-]+|NPM-\d+-\d+|RUSTSEC-\d{4}-\d+|PYSEC-\d{4}-\d+|GO-\d{4}-\d+)/i);
+            let osvId = osvMatch ? osvMatch[1].toUpperCase() : 'No Alt ID';
 
             // Deteksi nama paket kerentanan (Diperkuat dengan pola ganda)
             let pkg = 'Unknown';
@@ -74,14 +84,14 @@ jobs:
             // Inisialisasi variabel penampung data
             let severity = 'UNKNOWN';
             let cvss = 'N/A';
-            let title = `Security Update: ${pkg} (${ghsa})`; // Fallback awal
+            let title = `Security Update: ${pkg} (${ghsa !== 'No GHSA' ? ghsa : (cve !== 'No CVE' ? cve : osvId)})`; // Fallback dinamis
             let summaryDesc = `${botType} security update detected.`;
-            let cweList = 'N/A';
+            let cweList = extractedCwe ? extractedCwe : 'N/A';
             let vulnRange = 'Unknown';
             let patched = 'None';
 
             // ==========================================
-            // STRATEGI TAMBAHAN 2: Fetch Ganda (Public Advisory API + GitHub REST/GraphQL Fallback)
+            // STRATEGI TAMBAHAN 2: Fetch Ganda (Public Advisory API)
             // ==========================================
             if (ghsa !== 'No GHSA') {
               try {
@@ -98,6 +108,7 @@ jobs:
                   if (advData.cve_id) cve = advData.cve_id;
 
                   if (advData.cwes && advData.cwes.length > 0) {
+                    // Timpa cweList manual dengan data resmi dari API jika ada
                     cweList = advData.cwes.map(c => `${c.cwe_id} (${c.name})`).join(', ');
                   }
 
@@ -129,7 +140,7 @@ jobs:
                 const prComments = await github.rest.issues.listComments({
                   owner, repo, issue_number: parseInt(process.env.PR_NUMBER)
                 });
-                // Mencari petunjuk tambahan dari komentar bot Dependabot jika ada
+                
                 for (const comment of prComments.data) {
                   const bodyText = comment.body;
                   const foundGhsa = bodyText.match(/(GHSA-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4})/i);
@@ -151,15 +162,15 @@ jobs:
 
             // Fallback Judul Darurat (Jika API gagal dan judul masih bawaan)
             if (title.startsWith('Security Update:')) {
-               if (severity !== 'UNKNOWN' && cve !== 'No CVE') {
-                 title = `Security: ${severity} - ${pkg} (${ghsa} / ${cve})`;
+               if (severity !== 'UNKNOWN' && (cve !== 'No CVE' || osvId !== 'No Alt ID')) {
+                 title = `Security: ${severity} - ${pkg} (${ghsa !== 'No GHSA' ? ghsa : (cve !== 'No CVE' ? cve : osvId)})`;
                } else {
-                 title = `Security Advisory: ${pkg} (${ghsa})`;
+                 title = `Security Advisory: ${pkg} (${ghsa !== 'No GHSA' ? ghsa : 'Unknown ID'})`;
                }
             }
 
-            // FILTER ANTI-SPAM
-            if (botType === 'Dependabot' && severity === 'UNKNOWN' && ghsa === 'No GHSA' && cve === 'No CVE') {
+            // FILTER ANTI-SPAM (Diperketat: skip cuma kalau semua ID kosong)
+            if (botType === 'Dependabot' && severity === 'UNKNOWN' && ghsa === 'No GHSA' && cve === 'No CVE' && osvId === 'No Alt ID') {
               console.log('✅ PR Dependabot ini adalah update versi normal. Melewati pembuatan Issue...');
               return; 
             }
@@ -187,7 +198,7 @@ jobs:
             );
             const existing = issues.find(i => i.title === title);
 
-            // 3. STRUKTUR FORMAT PADA BODY ISSUE (Rata Kiri)
+            // 3. STRUKTUR FORMAT PADA BODY ISSUE
             const body = `## 🛡️ Security Vulnerability (from ${botType} PR #${process.env.PR_NUMBER})
 
             ### Description
@@ -205,6 +216,7 @@ jobs:
             ### Identifiers
             - **GHSA ID:** ${ghsa}
             - **CVE ID:** ${cve}
+            - **Alt ID (OSV/Snyk):** ${osvId}
             
             ### Weaknesses
             - ${cweList}
