@@ -96,9 +96,9 @@ jobs:
           TRIGGERED_COUNT: ${{ steps.patrol_task.outputs.triggered_count }}
           TRIGGERED_TEXT: ${{ steps.patrol_task.outputs.triggered_text }}
           NOFIX_TEXT: ${{ steps.patrol_task.outputs.nofix_text }}
-          ERRORS: ${{ steps.patrol_task.outputs.errors }}
         run: |
           DESC="🌿 **Laporan Patroli Hutan Avidya (Fase 1: Pemicuan)**"$'\n\n'"Perintah perbaikan telah disebar ke dahan-dahan kode."
+          FOOTER_TEXT="🍃 Obat telah disebar. Menunggu reaksi ekosistem..."
 
           jq -n \
             --arg title "🏹 Tighnari's Forest Patrol (Trigger Fixes)" \
@@ -108,6 +108,7 @@ jobs:
             --arg t_count "${TRIGGERED_COUNT:-0}" \
             --arg t_text "$TRIGGERED_TEXT" \
             --arg nf_text "$NOFIX_TEXT" \
+            --arg footer "$FOOTER_TEXT" \
             '{
               embeds: [{
                 title: $title,
@@ -116,10 +117,10 @@ jobs:
                 fields: [
                   { name: "📁 Wilayah", value: ("`" + $repo + "`"), inline: false },
                   { name: "🌲 Total Alert", value: $total, inline: true },
-                  { name: "🏹 Obat Diberikan (" + $t_count + ")", value: $t_text, inline: false },
+                  { name: ("🏹 Obat Diberikan (" + $t_count + ")"), value: $t_text, inline: false },
                   { name: "🍂 Menunggu Penangkal", value: $nf_text, inline: false }
                 ],
-                footer: { text: "🍃 'Obat telah disebar. Menunggu reaksi ekosistem...'" }
+                footer: { text: $footer }
               }]
             }' > discord_tighnari_1.json
 
