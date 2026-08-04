@@ -9,6 +9,7 @@ on:
       - "Security PR"
       - "Remove Unused Branches"
       - "Sync Security Advisories"
+      - "Dependabot Auto Fixer"
     types:
       - completed
 
