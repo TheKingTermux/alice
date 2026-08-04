@@ -25,7 +25,7 @@ jobs:
         id: get_bug_bot_token
         uses: actions/create-github-app-token@v3
         with:
-          client-id: ${{ secrets.BOT_APP_ID }} # Diubah dari app-id ke client-id
+          client-id: ${{ secrets.BOT_APP_ID }} # Menggunakan client-id terbaru
           private-key: ${{ secrets.BOT_PRIVATE_KEY }}
 
       - name: Extract info & Create/Update Issue
@@ -84,7 +84,8 @@ jobs:
             // Inisialisasi variabel penampung data
             let severity = 'UNKNOWN';
             let cvss = 'N/A';
-            let title = `Security Update: ${pkg} (${ghsa !== 'No GHSA' ? ghsa : (cve !== 'No CVE' ? cve : osvId)})`; // Fallback dinamis
+            let vectorString = 'N/A'; // Menampung kode mentah metrik CVSS
+            let title = `Security Update: ${pkg} (${ghsa !== 'No GHSA' ? ghsa : (cve !== 'No CVE' ? cve : osvId)})`;
             let summaryDesc = `${botType} security update detected.`;
             let cweList = extractedCwe ? extractedCwe : 'N/A';
             let vulnRange = 'Unknown';
@@ -105,10 +106,9 @@ jobs:
                   if (advData.description) summaryDesc = advData.description;
                   if (advData.severity) severity = advData.severity.toUpperCase();
                   if (advData.cvss && advData.cvss.score) cvss = advData.cvss.score.toString();
-                  if (advData.cve_id) cve = advData.cve_id;
+                  if (advData.cvss && advData.cvss.vector_string) vectorString = advData.cvss.vector_string;
 
                   if (advData.cwes && advData.cwes.length > 0) {
-                    // Timpa cweList manual dengan data resmi dari API jika ada
                     cweList = advData.cwes.map(c => `${c.cwe_id} (${c.name})`).join(', ');
                   }
 
@@ -132,35 +132,40 @@ jobs:
             }
 
             // ==========================================
-            // STRATEGI TAMBAHAN 3: Fallback ke GitHub Security Advisory Database (Jika GHSA tidak ditemukan di teks PR)
+            // STRATEGI TAMBAHAN 3: Penerjemah CVSS Vector String ke Format Teks
             // ==========================================
-            if (severity === 'UNKNOWN' && botType === 'Dependabot') {
-              try {
-                console.log(`🔍 Melakukan investigasi mendalam metadata PR Dependabot...`);
-                const prComments = await github.rest.issues.listComments({
-                  owner, repo, issue_number: parseInt(process.env.PR_NUMBER)
-                });
-                
-                for (const comment of prComments.data) {
-                  const bodyText = comment.body;
-                  const foundGhsa = bodyText.match(/(GHSA-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4})/i);
-                  if (foundGhsa && ghsa === 'No GHSA') {
-                    ghsa = foundGhsa[1].toUpperCase();
-                    console.log(`💡 Menemukan GHSA ID dari komentar Dependabot: ${ghsa}`);
-                  }
+            function parseCvssVector(vector) {
+              if (!vector || vector === 'N/A') return '*Data metrik belum dipublikasikan oleh repositori database.*';
+              const map = {
+                'AV:N': 'Network', 'AV:A': 'Adjacent', 'AV:L': 'Local', 'AV:P': 'Physical',
+                'AC:L': 'Low', 'AC:H': 'High',
+                'PR:N': 'None', 'PR:L': 'Low', 'PR:H': 'High',
+                'UI:N': 'None', 'UI:R': 'Required',
+                'S:U': 'Unchanged', 'S:C': 'Changed',
+                'C:N': 'None', 'C:L': 'Low', 'C:H': 'High',
+                'I:N': 'None', 'I:L': 'Low', 'I:H': 'High',
+                'A:N': 'None', 'A:L': 'Low', 'A:H': 'High'
+              };
+              const parts = vector.replace(/^CVSS:3\.[01]\//, '').split('/');
+              let result = `**Vector:** \`${vector}\`\n`;
+              parts.forEach(p => {
+                const [k, v] = p.split(':');
+                if (map[`${k}:${v}`]) {
+                  const name = k === 'AV' ? 'Attack vector' : k === 'AC' ? 'Attack complexity' : k === 'PR' ? 'Privileges required' : k === 'UI' ? 'User interaction' : k === 'S' ? 'Scope' : k === 'C' ? 'Confidentiality' : k === 'I' ? 'Integrity' : k === 'A' ? 'Availability' : k;
+                  result += `- **${name}:** ${map[`${k}:${v}`]}\n`;
                 }
-              } catch (e) {
-                console.log(`⚠️ Gagal memindai komentar tambahan: ${e.message}`);
-              }
+              });
+              return result;
             }
 
-            // Pengecekan tingkat keparahan cadangan jika API beneran mati
+            const cvssMetrics = parseCvssVector(vectorString);
+
+            // Fallback investigasi teks jika API belum siap
             if (severity === 'UNKNOWN') {
               const severityMatch = prBody.match(/\*\*Severity:\*\*\s*(\w+)/i) || prBody.match(/Severity:\s*(\w+)/i);
               if (severityMatch) severity = severityMatch[1].toUpperCase();
             }
 
-            // Fallback Judul Darurat (Jika API gagal dan judul masih bawaan)
             if (title.startsWith('Security Update:')) {
                if (severity !== 'UNKNOWN' && (cve !== 'No CVE' || osvId !== 'No Alt ID')) {
                  title = `Security: ${severity} - ${pkg} (${ghsa !== 'No GHSA' ? ghsa : (cve !== 'No CVE' ? cve : osvId)})`;
@@ -169,13 +174,11 @@ jobs:
                }
             }
 
-            // FILTER ANTI-SPAM (Diperketat: skip cuma kalau semua ID kosong)
             if (botType === 'Dependabot' && severity === 'UNKNOWN' && ghsa === 'No GHSA' && cve === 'No CVE' && osvId === 'No Alt ID') {
               console.log('✅ PR Dependabot ini adalah update versi normal. Melewati pembuatan Issue...');
               return; 
             }
 
-            // Normalisasi & Pembuatan Label
             let issueLabels = ['Security', 'Auto Create Issues', 'dependencies'];
             let severityLabel = 'Low';
             
@@ -191,14 +194,12 @@ jobs:
             }
             issueLabels.push(severityLabel);
 
-            // Cari Issue yang sudah ada
             const issues = await github.paginate(
               github.rest.issues.listForRepo,
               { owner, repo, state: 'all', labels: 'Auto Create Issues', per_page: 100 }
             );
             const existing = issues.find(i => i.title === title);
 
-            // 3. STRUKTUR FORMAT PADA BODY ISSUE
             const body = `## 🛡️ Security Vulnerability (from ${botType} PR #${process.env.PR_NUMBER})
 
             ### Description
@@ -212,6 +213,9 @@ jobs:
             
             ### Severity Score
             ${cvss} / 10
+
+            ### CVSS v3 Base Metrics
+            ${cvssMetrics}
             
             ### Identifiers
             - **GHSA ID:** ${ghsa}
@@ -236,13 +240,10 @@ jobs:
 
             let issueNumber = null;
 
-            // Eksekusi Pembuatan atau Pembaruan Tiket Issue
             if (payload.action === 'opened' || payload.action === 'synchronize' || payload.action === 'reopened') {
               if (!existing) {
                 const createdIssue = await github.rest.issues.create({
-                  owner, repo,
-                  title,
-                  body,
+                  owner, repo, title, body,
                   labels: issueLabels,
                   assignees: ['TheKingTermux'],
                   milestone: 1
@@ -253,52 +254,30 @@ jobs:
                 await github.rest.issues.update({
                   owner, repo,
                   issue_number: existing.number,
-                  body,
-                  state: 'open',
-                  milestone: 1
+                  body, state: 'open', milestone: 1
                 });
                 const currentLabels = existing.labels.map(l => l.name);
                 const missingLabels = issueLabels.filter(l => !currentLabels.includes(l));
                 if (missingLabels.length > 0) {
-                  await github.rest.issues.addLabels({
-                    owner, repo,
-                    issue_number: existing.number,
-                    labels: missingLabels
-                  });
+                  await github.rest.issues.addLabels({ owner, repo, issue_number: existing.number, labels: missingLabels });
                 }
                 issueNumber = existing.number;
                 console.log(`Updated issue #${issueNumber}: ${title}`);
               }
 
-              // 4. PENYISIPAN "Closes #Issue" KE DESKRIPSI PR
               if (issueNumber) {
                 const closingKeywordRegex = new RegExp(`(?:close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)\\s+#${issueNumber}\\b`, 'i');
-                
                 if (!closingKeywordRegex.test(prBody)) {
-                  console.log(`Menyisipkan tautan penutup ke PR deskripsi...`);
                   const newPrBody = prBody + `\n\n---\n**🛡️ Auto-linked Security Task:** Closes #${issueNumber}`;
-                  
-                  await github.rest.pulls.update({
-                    owner,
-                    repo,
-                    pull_number: process.env.PR_NUMBER,
-                    body: newPrBody
-                  });
-                  console.log(`✅ Deskripsi PR berhasil diperbarui! (Closes #${issueNumber})`);
+                  await github.rest.pulls.update({ owner, repo, pull_number: process.env.PR_NUMBER, body: newPrBody });
                 }
               }
             }
 
-            // Fallback: Jika PR ditutup tanpa di-merge tapi issue masih open
             if (payload.action === 'closed' && existing) {
               const labels = existing.labels.map(l => l.name);
               if (!labels.includes('do-not-autoclose')) {
-                await github.rest.issues.update({
-                  owner, repo,
-                  issue_number: existing.number,
-                  state: 'closed',
-                  state_reason: 'completed'
-                });
+                await github.rest.issues.update({ owner, repo, issue_number: existing.number, state: 'closed', state_reason: 'completed' });
                 console.log(`Closed issue: ${title}`);
               }
             }

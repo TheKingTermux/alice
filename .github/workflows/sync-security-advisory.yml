@@ -22,6 +22,7 @@ jobs:
           private-key: ${{ secrets.BOT_PRIVATE_KEY }}
 
       - name: Sync Old Issues with Latest Advisory Data
+        id: sync_task
         uses: actions/github-script@v9
         with:
           github-token: ${{ steps.bot_token.outputs.token }}
@@ -35,19 +36,28 @@ jobs:
             const issues = await github.paginate(github.rest.issues.listForRepo, {
               owner,
               repo,
-              state: 'all', // Termasuk yang sudah closed as completed
+              state: 'all',
               labels: 'Security,Auto Create Issues',
               per_page: 100
             });
 
             console.log(`Ditemukan ${issues.length} tiket untuk disinkronisasi.`);
 
+            // Variabel penghitung untuk laporan Scribe
+            let updatedCount = 0;
+            let syncedCount = 0;
+            let failedCount = 0;
+
             for (const issue of issues) {
               const oldBody = issue.body || '';
+              const currentLabels = issue.labels.map(l => l.name);
               
               // 2. Cari GHSA ID dari teks body Issue lama
               const ghsaMatch = oldBody.match(/\*\*GHSA ID:\*\*\s*(GHSA-[A-Z0-9-]+)/i);
-              if (!ghsaMatch) continue; // Skip jika tidak ada GHSA
+              if (!ghsaMatch) {
+                syncedCount++; 
+                continue; 
+              }
               
               const ghsa = ghsaMatch[1].toUpperCase();
               console.log(`\n⏳ Menyelaraskan Issue #${issue.number} (${ghsa})...`);
@@ -57,27 +67,22 @@ jobs:
                 const advResponse = await fetch(`https://api.github.com/advisories/${ghsa}`);
                 if (!advResponse.ok) {
                   console.log(`⚠️ API mengembalikan status ${advResponse.status}, melewati...`);
+                  failedCount++;
                   continue;
                 }
                 const advData = await advResponse.json();
 
-                // 4. Ekstrak data metadata lama agar tidak hilang (Package, PR, dll)
+                // 4. Ekstrak data metadata lama
                 const prMatch = oldBody.match(/from (Renovate|Dependabot) PR #(\d+)/i) || [];
-                const botType = prMatch[1] || 'Dependabot';
-                const prNumber = prMatch[2] || 'Unknown';
-                
+                const botType = prMatch[1] || 'Dependabot'; const prNumber = prMatch[2] || 'Unknown';
                 const urlMatch = oldBody.match(/- PR: (https:\/\/github.com\/[^\s]+)/i) || [];
                 const prUrl = urlMatch[1] || `https://github.com/${owner}/${repo}/pull/${prNumber}`;
-                
                 const pkgMatch = oldBody.match(/\*\*Package:\*\*\s*([^\n]+)/i) || [];
                 const pkg = pkgMatch[1] || 'Unknown';
-                
                 const osvMatch = oldBody.match(/\*\*Alt ID \(OSV\/Snyk\):\*\*\s*([^\n]+)/i) || [];
                 const osvId = osvMatch[1] || 'No Alt ID';
-                
                 const vulnRangeMatch = oldBody.match(/\*\*Affected versions:\*\*\n\s+- ([^\n]+)/i) || [];
                 const vulnRange = vulnRangeMatch[1] || 'Unknown';
-                
                 const patchedMatch = oldBody.match(/\*\*Patched versions:\*\*\s*([^\n]+)/i) || [];
                 const patched = patchedMatch[1] || 'None';
 
@@ -86,10 +91,38 @@ jobs:
                 const summaryDesc = advData.description || 'No description available.';
                 const severity = advData.severity ? advData.severity.toUpperCase() : 'UNKNOWN';
                 const cvss = advData.cvss && advData.cvss.score ? advData.cvss.score.toString() : 'N/A';
+                const vectorString = advData.cvss && advData.cvss.vector_string ? advData.cvss.vector_string : 'N/A';
                 const cve = advData.cve_id ? advData.cve_id : 'No CVE';
                 const cweList = advData.cwes && advData.cwes.length > 0 ? advData.cwes.map(c => `${c.cwe_id} (${c.name})`).join(', ') : 'N/A';
 
-                // 6. Rangkai Ulang Body (Format Sama Persis)
+                // Fungsi parser CVSS v3 Base Metrics
+                function parseCvssVector(vector) {
+                  if (!vector || vector === 'N/A') return '*Data metrik belum dipublikasikan oleh repositori database.*';
+                  const map = {
+                    'AV:N': 'Network', 'AV:A': 'Adjacent', 'AV:L': 'Local', 'AV:P': 'Physical',
+                    'AC:L': 'Low', 'AC:H': 'High',
+                    'PR:N': 'None', 'PR:L': 'Low', 'PR:H': 'High',
+                    'UI:N': 'None', 'UI:R': 'Required',
+                    'S:U': 'Unchanged', 'S:C': 'Changed',
+                    'C:N': 'None', 'C:L': 'Low', 'C:H': 'High',
+                    'I:N': 'None', 'I:L': 'Low', 'I:H': 'High',
+                    'A:N': 'None', 'A:L': 'Low', 'A:H': 'High'
+                  };
+                  const parts = vector.replace(/^CVSS:3\.[01]\//, '').split('/');
+                  let result = `**Vector:** \`${vector}\`\n`;
+                  parts.forEach(p => {
+                    const [k, v] = p.split(':');
+                    if (map[`${k}:${v}`]) {
+                      const name = k === 'AV' ? 'Attack vector' : k === 'AC' ? 'Attack complexity' : k === 'PR' ? 'Privileges required' : k === 'UI' ? 'User interaction' : k === 'S' ? 'Scope' : k === 'C' ? 'Confidentiality' : k === 'I' ? 'Integrity' : k === 'A' ? 'Availability' : k;
+                      result += `- **${name}:** ${map[`${k}:${v}`]}\n`;
+                    }
+                  });
+                  return result;
+                }
+
+                const cvssMetrics = parseCvssVector(vectorString);
+
+                // 6. Rangkai Ulang Body
                 const newBody = `## 🛡️ Security Vulnerability (from ${botType} PR #${prNumber})
 
             ### Description
@@ -103,6 +136,9 @@ jobs:
             
             ### Severity Score
             ${cvss} / 10
+
+            ### CVSS v3 Base Metrics
+            ${cvssMetrics}
             
             ### Identifiers
             - **GHSA ID:** ${ghsa}
@@ -125,21 +161,92 @@ jobs:
             ---
             _Auto-generated from ${botType} security PR. Fix by merging PR #${prNumber}._`;
 
-                // 7. Bandingkan dan Update jika ada perubahan (Hindari spam update)
-                if (newBody !== oldBody) {
+                // Logic Tambahan: Cek status perbaikan untuk manajemen label 'Fixed'
+                let labelsToAdd = [];
+                if (issue.state === 'closed' && !currentLabels.includes('Fixed')) {
+                  labelsToAdd.push('Fixed');
+                  console.log(`💡 Menandai Issue #${issue.number} dengan label 'Fixed' karena PR telah selesai digabungkan.`);
+                }
+
+                // 7. Bandingkan perubahan isi ATAU penambahan label baru
+                if (newBody !== oldBody || labelsToAdd.length > 0) {
+                  // Jalankan pembaruan teks/judul jika body berubah
                   await github.rest.issues.update({
-                    owner,
-                    repo,
+                    owner, repo,
                     issue_number: issue.number,
-                    title: title, // Update judul jika advisory punya nama yg lebih spesifik
+                    title: title,
                     body: newBody
                   });
+
+                  // Suntikkan label 'Fixed' jika statusnya baru ditutup
+                  if (labelsToAdd.length > 0) {
+                    await github.rest.issues.addLabels({
+                      owner, repo,
+                      issue_number: issue.number,
+                      labels: labelsToAdd
+                    });
+                  }
+                  
                   console.log(`✅ Berhasil! Issue #${issue.number} telah diperbarui dengan data Advisory terkini.`);
+                  updatedCount++;
                 } else {
-                  console.log(`➖ Issue #${issue.number} sudah sinkron, tidak ada pembaruan.`);
+                  console.log(`➖ Issue #${issue.number} sudah sinkron & tidak ada info baru. Dilewati.`);
+                  syncedCount++;
                 }
 
               } catch (e) {
                 console.log(`❌ Gagal menyelaraskan Issue #${issue.number}: ${e.message}`);
+                failedCount++;
               }
             }
+            
+            // Simpan hasil hitungan untuk dikirim ke Discord
+            core.setOutput('total', issues.length);
+            core.setOutput('updated', updatedCount);
+            core.setOutput('synced', syncedCount);
+            core.setOutput('failed', failedCount);
+
+      - name: Kirim Laporan ke Discord (Scribe Alhaitham)
+        if: env.DISCORD_URL != '' && always()
+        env:
+          DISCORD_URL: ${{ secrets.DISCORD_WEBHOOK_SCRIBE }}
+          TOTAL_ISSUES: ${{ steps.sync_task.outputs.total }}
+          UPDATED: ${{ steps.sync_task.outputs.updated }}
+          SYNCED: ${{ steps.sync_task.outputs.synced }}
+          FAILED: ${{ steps.sync_task.outputs.failed }}
+        run: |
+          DESC="📖 **Laporan Penyelarasan Akademiya**"$'\n\n'"Pembaruan arsip selesai. Fakta dan logika telah diperbarui."
+          
+          if [ "$UPDATED" -eq 0 ] && [ "$FAILED" -eq 0 ]; then
+            FOOTER_QUOTE="✨ 'Tidak ada anomali yang mengharuskanku untuk lembur hari ini.'"
+          else
+            FOOTER_QUOTE="📘 'Catatan yang akurat adalah fondasi dari setiap keputusan.'"
+          fi
+
+          jq -n \
+            --arg title "Base Data Synchronization Processed" \
+            --arg desc "$DESC" \
+            --arg repo "${{ github.repository }}" \
+            --arg total "${TOTAL_ISSUES:-0}" \
+            --arg updated "${UPDATED:-0}" \
+            --arg synced "${SYNCED:-0}" \
+            --arg failed "${FAILED:-0}" \
+            --arg footer_text "$FOOTER_QUOTE" \
+            '{
+              embeds: [{
+                title: $title,
+                description: $desc,
+                color: 4569206,
+                fields: [
+                  { name: "📁 Repositori", value: ("`" + $repo + "`"), inline: false },
+                  { name: "🔍 Total Arsip Diperiksa", value: $total, inline: true },
+                  { name: "📝 Berhasil Diperbarui", value: $updated, inline: true },
+                  { name: "✅ Sudah Sinkron", value: $synced, inline: true },
+                  { name: "⚠️ Gagal/Error", value: $failed, inline: true }
+                ],
+                footer: { text: $footer_text }
+              }]
+            }' > discord_scribe_payload.json
+
+          curl -H "Content-Type: application/json" -X POST -d @discord_scribe_payload.json "$DISCORD_URL"
+          echo "📬 Laporan arsip berhasil dikirim ke saluran Discord!"
