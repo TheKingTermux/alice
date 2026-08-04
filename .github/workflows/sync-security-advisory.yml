@@ -1,0 +1,145 @@
+name: Sync Security Advisories
+
+on:
+  schedule:
+    # Berjalan setiap hari Minggu jam 00:00 UTC (1 minggu sekali)
+    - cron: '0 0 * * 0'
+  workflow_dispatch: # Tombol manual buat testing
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  sync-advisories:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate Bot Token
+        id: bot_token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+
+      - name: Sync Old Issues with Latest Advisory Data
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ steps.bot_token.outputs.token }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            console.log("🔍 Mengambil semua tiket Issue Keamanan...");
+            
+            // 1. Ambil semua issue dengan label 'Security' dan 'Auto Create Issues' (Open & Closed)
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner,
+              repo,
+              state: 'all', // Termasuk yang sudah closed as completed
+              labels: 'Security,Auto Create Issues',
+              per_page: 100
+            });
+
+            console.log(`Ditemukan ${issues.length} tiket untuk disinkronisasi.`);
+
+            for (const issue of issues) {
+              const oldBody = issue.body || '';
+              
+              // 2. Cari GHSA ID dari teks body Issue lama
+              const ghsaMatch = oldBody.match(/\*\*GHSA ID:\*\*\s*(GHSA-[A-Z0-9-]+)/i);
+              if (!ghsaMatch) continue; // Skip jika tidak ada GHSA
+              
+              const ghsa = ghsaMatch[1].toUpperCase();
+              console.log(`\n⏳ Menyelaraskan Issue #${issue.number} (${ghsa})...`);
+
+              try {
+                // 3. Fetch data TERBARU dari GitHub Advisory API
+                const advResponse = await fetch(`https://api.github.com/advisories/${ghsa}`);
+                if (!advResponse.ok) {
+                  console.log(`⚠️ API mengembalikan status ${advResponse.status}, melewati...`);
+                  continue;
+                }
+                const advData = await advResponse.json();
+
+                // 4. Ekstrak data metadata lama agar tidak hilang (Package, PR, dll)
+                const prMatch = oldBody.match(/from (Renovate|Dependabot) PR #(\d+)/i) || [];
+                const botType = prMatch[1] || 'Dependabot';
+                const prNumber = prMatch[2] || 'Unknown';
+                
+                const urlMatch = oldBody.match(/- PR: (https:\/\/github.com\/[^\s]+)/i) || [];
+                const prUrl = urlMatch[1] || `https://github.com/${owner}/${repo}/pull/${prNumber}`;
+                
+                const pkgMatch = oldBody.match(/\*\*Package:\*\*\s*([^\n]+)/i) || [];
+                const pkg = pkgMatch[1] || 'Unknown';
+                
+                const osvMatch = oldBody.match(/\*\*Alt ID \(OSV\/Snyk\):\*\*\s*([^\n]+)/i) || [];
+                const osvId = osvMatch[1] || 'No Alt ID';
+                
+                const vulnRangeMatch = oldBody.match(/\*\*Affected versions:\*\*\n\s+- ([^\n]+)/i) || [];
+                const vulnRange = vulnRangeMatch[1] || 'Unknown';
+                
+                const patchedMatch = oldBody.match(/\*\*Patched versions:\*\*\s*([^\n]+)/i) || [];
+                const patched = patchedMatch[1] || 'None';
+
+                // 5. Timpa dengan data Advisory TERBARU
+                const title = advData.summary || issue.title;
+                const summaryDesc = advData.description || 'No description available.';
+                const severity = advData.severity ? advData.severity.toUpperCase() : 'UNKNOWN';
+                const cvss = advData.cvss && advData.cvss.score ? advData.cvss.score.toString() : 'N/A';
+                const cve = advData.cve_id ? advData.cve_id : 'No CVE';
+                const cweList = advData.cwes && advData.cwes.length > 0 ? advData.cwes.map(c => `${c.cwe_id} (${c.name})`).join(', ') : 'N/A';
+
+                // 6. Rangkai Ulang Body (Format Sama Persis)
+                const newBody = `## 🛡️ Security Vulnerability (from ${botType} PR #${prNumber})
+
+            ### Description
+            ${summaryDesc}
+            
+            ### Severity Check
+            - ${severity === 'LOW' ? '☑' : '☐'} Low
+            - ${severity === 'MODERATE' ? '☑' : '☐'} Moderate
+            - ${severity === 'HIGH' ? '☑' : '☐'} High
+            - ${severity === 'CRITICAL' ? '☑' : '☐'} Critical
+            
+            ### Severity Score
+            ${cvss} / 10
+            
+            ### Identifiers
+            - **GHSA ID:** ${ghsa}
+            - **CVE ID:** ${cve}
+            - **Alt ID (OSV/Snyk):** ${osvId}
+            
+            ### Weaknesses
+            - ${cweList}
+            
+            ### Affected
+            - **Package:** ${pkg}
+            - **Affected versions:**
+              - ${vulnRange}
+            - **Patched versions:** ${patched}
+            
+            ### References
+            - Advisory: https://github.com/advisories/${ghsa}
+            - PR: ${prUrl}
+            
+            ---
+            _Auto-generated from ${botType} security PR. Fix by merging PR #${prNumber}._`;
+
+                // 7. Bandingkan dan Update jika ada perubahan (Hindari spam update)
+                if (newBody !== oldBody) {
+                  await github.rest.issues.update({
+                    owner,
+                    repo,
+                    issue_number: issue.number,
+                    title: title, // Update judul jika advisory punya nama yg lebih spesifik
+                    body: newBody
+                  });
+                  console.log(`✅ Berhasil! Issue #${issue.number} telah diperbarui dengan data Advisory terkini.`);
+                } else {
+                  console.log(`➖ Issue #${issue.number} sudah sinkron, tidak ada pembaruan.`);
+                }
+
+              } catch (e) {
+                console.log(`❌ Gagal menyelaraskan Issue #${issue.number}: ${e.message}`);
+              }
+            }
