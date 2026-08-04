@@ -1,4 +1,4 @@
-name: 📜 Scribe's Archive Synchronization
+name: Sync Security Advisories
 
 on:
   schedule:
