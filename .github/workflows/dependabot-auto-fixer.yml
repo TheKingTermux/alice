@@ -220,6 +220,7 @@ jobs:
           FAILED_TEXT: ${{ steps.check_task.outputs.failed_text }}
         run: |
           DESC="🌿 **Laporan Evaluasi Hutan Avidya (Fase 2: Hasil Respons)**"$'\n\n'"Pemeriksaan susulan setelah jeda 5 menit selesai."
+          FOOTER_TEXT="🍃 Jika ada kendala otomatisasi, periksa dependensi secara manual."
 
           jq -n \
             --arg title "🏹 Tighnari's Forest Patrol (Evaluation Result)" \
@@ -227,16 +228,17 @@ jobs:
             --arg repo "${{ github.repository }}" \
             --arg f_count "${FAILED_COUNT:-0}" \
             --arg f_text "$FAILED_TEXT" \
+            --arg footer "$FOOTER_TEXT" \
             '{
               embeds: [{
                 title: $title,
                 description: $desc,
-                color: 15158332, # Warna Oranye Peringatan (Warning)
+                color: 15158332,
                 fields: [
                   { name: "📁 Wilayah", value: ("`" + $repo + "`"), inline: false },
-                  { name: "⚠️ Kendala / Gagal Update (" + $f_count + ")", value: $f_text, inline: false }
+                  { name: ("⚠️ Kendala / Gagal Update (" + $f_count + ")"), value: $f_text, inline: false }
                 ],
-                footer: { text: "🍃 'Jika ada kendala otomatisasi, periksa dependensi secara manual.'" }
+                footer: { text: $footer }
               }]
             }' > discord_tighnari_2.json
 
