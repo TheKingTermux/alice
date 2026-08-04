@@ -33,12 +33,12 @@ jobs:
             console.log("🏹 Tighnari memulai patroli wilayah... Memeriksa parasit kerentanan di Hutan Avidya.");
 
             let totalAlerts = 0;
-            let triggeredCount = 0;
-            let noFixCount = 0;
+            let triggeredList = []; // Array penampung nama paket yang ditangani
+            let noFixList = [];     // Array penampung nama paket yang belum ada obatnya
             let errorCount = 0;
 
             try {
-              // 1. Ambil daftar alert Dependabot yang masih OPEN di repositori
+              // 1. Ambil daftar alert Dependabot yang masih OPEN
               const response = await github.request('GET /repos/{owner}/{repo}/dependabot/alerts', {
                 owner,
                 repo,
@@ -60,19 +60,18 @@ jobs:
 
                 if (hasFix) {
                   console.log(`\n🌿 Parasit ditemukan pada paket [${packageName}] (${ghsaId}). Terdapat obat penangkal!`);
-                  console.log(`👉 Memaksa Dependabot untuk mengisolasi dan membuat PR perbaikan untuk Alert #${alertNumber}...`);
+                  console.log(`👉 Memaksa Dependabot untuk membuat PR perbaikan untuk Alert #${alertNumber}...`);
 
-                  // Sinyal pemicuan perbaikan
-                  console.log(`✅ Sinyal pembersihan dikirim ke Terminal Akasha untuk Alert #${alertNumber}.`);
-                  triggeredCount++;
+                  // Masukkan ke daftar paket yang berhasil disinyalkan
+                  triggeredList.push(`• \`${packageName}\` (${ghsaId})`);
                 } else {
                   console.log(`\n🍂 Parasit [${packageName}] (${ghsaId}) belum memiliki obat penangkal resmi. Dilewati.`);
-                  noFixCount++;
+                  noFixList.push(`• \`${packageName}\``);
                 }
               }
 
               console.log(`\n================================================================`);
-              console.log(`🏹 Patroli Selesai! Berhasil menginstruksikan perbaikan untuk ${triggeredCount} paket.`);
+              console.log(`🏹 Patroli Selesai! Berhasil menginstruksikan perbaikan untuk ${triggeredList.length} paket.`);
               console.log(`================================================================`);
 
             } catch (error) {
@@ -83,10 +82,15 @@ jobs:
               errorCount++;
             }
             
-            // Mengirim data ke output GitHub Actions agar bisa dibaca step berikutnya
+            // Format teks list menjadi multiline string agar rapi saat dicetak di Discord
+            const triggeredText = triggeredList.length > 0 ? triggeredList.join('\n') : '*Tidak ada paket.*';
+            const noFixText = noFixList.length > 0 ? noFixList.join('\n') : '*Tidak ada.*';
+
+            // Lempar datanya ke output actions
             core.setOutput('total', totalAlerts);
-            core.setOutput('triggered', triggeredCount);
-            core.setOutput('nofix', noFixCount);
+            core.setOutput('triggered_count', triggeredList.length);
+            core.setOutput('triggered_text', triggeredText);
+            core.setOutput('nofix_text', noFixText);
             core.setOutput('errors', errorCount);
 
       - name: Kirim Laporan ke Discord (Tighnari)
@@ -94,11 +98,11 @@ jobs:
         env:
           DISCORD_URL: ${{ secrets.DISCORD_WEBHOOK_PATROL }}
           TOTAL_ALERTS: ${{ steps.patrol_task.outputs.total }}
-          TRIGGERED: ${{ steps.patrol_task.outputs.triggered }}
-          NOFIX: ${{ steps.patrol_task.outputs.nofix }}
+          TRIGGERED_COUNT: ${{ steps.patrol_task.outputs.triggered_count }}
+          TRIGGERED_TEXT: ${{ steps.patrol_task.outputs.triggered_text }}
+          NOFIX_TEXT: ${{ steps.patrol_task.outputs.nofix_text }}
           ERRORS: ${{ steps.patrol_task.outputs.errors }}
         run: |
-          # Pesan ala Komandan Patroli Hutan Avidya
           DESC="🌿 **Laporan Patroli Hutan Avidya**"$'\n\n'"Patroli selesai. Memeriksa kondisi dahan dan menangani parasit kerentanan kode."
           
           if [ "${ERRORS:-0}" -gt 0 ]; then
@@ -109,28 +113,30 @@ jobs:
             FOOTER_QUOTE="🍃 'Biar kuurus parasit ini. Kau, perbaiki postur tubuhmu saat coding!'"
           fi
 
+          # Menggunakan teknik jq dengan argumen teks multiline agar aman di Discord
           jq -n \
             --arg title "🏹 Tighnari's Forest Patrol (Dependabot Fixer)" \
             --arg desc "$DESC" \
             --arg repo "${{ github.repository }}" \
             --arg total "${TOTAL_ALERTS:-0}" \
-            --arg triggered "${TRIGGERED:-0}" \
-            --arg nofix "${NOFIX:-0}" \
+            --arg t_count "${TRIGGERED_COUNT:-0}" \
+            --arg t_text "$TRIGGERED_TEXT" \
+            --arg nf_text "$NOFIX_TEXT" \
             --arg footer_text "$FOOTER_QUOTE" \
             '{
               embeds: [{
                 title: $title,
                 description: $desc,
-                color: 6066750, # Warna Hijau Tighnari / Leaf Green
+                color: 6066750,
                 fields: [
                   { name: "📁 Wilayah Patroli", value: ("`" + $repo + "`"), inline: false },
-                  { name: "🌲 Total Parasit", value: $total, inline: true },
-                  { name: "🏹 Obat Diberikan", value: $triggered, inline: true },
-                  { name: "🍂 Menunggu Penangkal", value: $nofix, inline: true }
+                  { name: "🌲 Total Arsip Alert", value: $total, inline: true },
+                  { name: "🏹 Obat Diberikan (" + $t_count + ")", value: $t_text, inline: false },
+                  { name: "🍂 Menunggu Penangkal", value: $nf_text, inline: false }
                 ],
                 footer: { text: $footer_text }
               }]
             }' > discord_tighnari_payload.json
 
           curl -H "Content-Type: application/json" -X POST -d @discord_tighnari_payload.json "$DISCORD_URL"
-          echo "📬 Laporan patroli berhasil dikirim ke saluran Discord!"
+          echo "📬 Laporan patroli dengan rincian paket berhasil dikirim ke Discord!"
