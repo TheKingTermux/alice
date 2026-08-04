@@ -88,6 +88,7 @@ jobs:
             core.setOutput('nofix_text', noFixText);
             core.setOutput('errors', errorCount);
 
+      # --- NOTIFIKASI 1: Murni di akhir job pertama, langsung terkirim detik ini juga ---
       - name: Kirim Laporan Pertama ke Discord (Tighnari - Pemicuan)
         if: env.DISCORD_URL != '' && always()
         env:
@@ -125,7 +126,7 @@ jobs:
             }' > discord_tighnari_1.json
 
           curl -H "Content-Type: application/json" -X POST -d @discord_tighnari_1.json "$DISCORD_URL"
-          echo "📬 Laporan fase 1 terkirim!"
+          echo "📬 Notif 1 terkirim dari Job 1!"
 
   check-dependabot-response:
     needs: forest-patrol
@@ -157,7 +158,6 @@ jobs:
             let failedUpdates = [];
 
             try {
-              // Mengambil kembali daftar alert untuk mengecek log error/respons terakhir
               const response = await github.request('GET /repos/{owner}/{repo}/dependabot/alerts', {
                 owner,
                 repo,
@@ -170,18 +170,6 @@ jobs:
                 const alertNumber = alert.number;
                 const alertUrl = alert.html_url;
                 
-                // Memeriksa apakah ada pesan error / catatan bahwa dependabot gagal memperbaiki
-                // Dependabot API menyimpan catatan error di properti 'error_details' atau status dismiss/auto-update logs jika ada.
-                // Jika tidak ada error eksplisit di properti API, kita cek log atau catat peringatan standar.
-                // Sebagai contoh penanganan error teks spesifik "Dependabot cannot update..."
-                
-                if (alert.state_reason === 'dismissed' || (alert.dependency && alert.security_advisory)) {
-                   // Jika ada indikasi gagal update otomatis, kita catat
-                   // Catatan: GitHub API untuk dependabot kadang mencatat error pada deskripsi log internal.
-                }
-                
-                // Untuk memastikan kita menangkap kasus gagal update, kita bisa memindai event audit atau mencatat alert yang masih tertahan
-                // Kita ambil detail tambahan alert jika diperlukan:
                 const detailResponse = await github.request('GET /repos/{owner}/{repo}/dependabot/alerts/{alert_number}', {
                   owner,
                   repo,
@@ -190,19 +178,11 @@ jobs:
                 
                 const alertDetail = detailResponse.data;
                 
-                // Cek jika ada pesan error dari dependabot (misal error proses otomatis)
-                if (alertDetail.error_details || (alertDetail.state === 'open' && alertDetail.auto_dismissed_at)) {
-                  const errorMsg = alertDetail.error_details ? alertDetail.error_details.message : 'Gagal memperbarui versi secara otomatis.';
+                if (alertDetail.error_details) {
+                  const errorMsg = alertDetail.error_details.message;
                   failedUpdates.push(`• \`${packageName}\`: ${errorMsg} ([Detail](${alertUrl}))`);
                 }
               }
-
-              // Jika API tidak menyertakan pesan error langsung tapi kita ingin melaporkan status pengecekan kedua:
-              // Mari kita rangkum alert yang masih belum tertangani setelah 5 menit.
-              if (failedUpdates.length === 0) {
-                console.log("✨ Tidak ada kendala kritis atau semua berjalan sesuai jalur.");
-              }
-
             } catch (error) {
               console.error(`⚠️ Gagal memindai ulang respons: ${error.message}`);
             }
@@ -243,4 +223,4 @@ jobs:
             }' > discord_tighnari_2.json
 
           curl -H "Content-Type: application/json" -X POST -d @discord_tighnari_2.json "$DISCORD_URL"
-          echo "📬 Laporan evaluasi fase 2 terkirim ke Discord!"
+          echo "📬 Notif 2 terkirim dari Job 2 setelah jeda 5 menit!"
