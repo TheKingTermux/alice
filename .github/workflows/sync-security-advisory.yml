@@ -161,15 +161,22 @@ jobs:
             ---
             _Auto-generated from ${botType} security PR. Fix by merging PR #${prNumber}._`;
 
-                // Logic Tambahan: Cek status perbaikan untuk manajemen label 'Fixed'
-                let labelsToAdd = [];
-                if (issue.state === 'closed' && !currentLabels.includes('Fixed')) {
-                  labelsToAdd.push('Fixed');
-                  console.log(`💡 Menandai Issue #${issue.number} dengan label 'Fixed' karena PR telah selesai digabungkan.`);
-                }
+                // TENTUKAN LABEL SEVERITY TERBARU YANG SEHARUSNYA
+                let targetSeverityLabel = 'Low';
+                if (severity === 'CRITICAL') targetSeverityLabel = 'Critical';
+                else if (severity === 'HIGH') targetSeverityLabel = 'High';
+                else if (severity === 'MODERATE') targetSeverityLabel = 'Moderate';
 
-                // 7. Bandingkan perubahan isi ATAU penambahan label baru
-                if (newBody !== oldBody || labelsToAdd.length > 0) {
+                // Cari apakah ada label keparahan yang salah/lama menempel saat ini
+                const severityPool = ['Low', 'Moderate', 'High', 'Critical'];
+                let wrongSeverityLabels = currentLabels.filter(l => severityPool.includes(l) && l !== targetSeverityLabel);
+                
+                // Cek status perbaikan untuk manajemen label 'Fixed'
+                let fixedLabelToAdd = (issue.state === 'closed' && !currentLabels.includes('Fixed'));
+                let needLabelUpdate = wrongSeverityLabels.length > 0 || !currentLabels.includes(targetSeverityLabel) || fixedLabelToAdd;
+
+                // 7. Bandingkan perubahan isi ATAU manajemen label
+                if (newBody !== oldBody || needLabelUpdate) {
                   // Jalankan pembaruan teks/judul jika body berubah
                   await github.rest.issues.update({
                     owner, repo,
@@ -178,16 +185,43 @@ jobs:
                     body: newBody
                   });
 
-                  // Suntikkan label 'Fixed' jika statusnya baru ditutup
-                  if (labelsToAdd.length > 0) {
+                  // ====================================================
+                  // 🛠️ FIX LOGIC: Bersihkan Label Lama & Terapkan yang Baru
+                  // ====================================================
+                  // 1. Hapus label severity lama yang salah jika terdeteksi nyangkut
+                  for (const wrongLabel of wrongSeverityLabels) {
+                    console.log(`🗑️ Menghapus label usang '${wrongLabel}' dari Issue #${issue.number}...`);
+                    try {
+                      await github.rest.issues.removeLabel({
+                        owner, repo,
+                        issue_number: issue.number,
+                        name: wrongLabel
+                      });
+                    } catch (labelErr) {
+                      console.log(`⚠️ Gagal hapus label ${wrongLabel} (mungkin sudah hilang): ${labelErr.message}`);
+                    }
+                  }
+
+                  // 2. Kumpulkan label-label baru yang wajib ditambahkan
+                  let labelsToPush = [];
+                  if (!currentLabels.includes(targetSeverityLabel)) {
+                    labelsToPush.push(targetSeverityLabel);
+                  }
+                  if (fixedLabelToAdd) {
+                    labelsToPush.push('Fixed');
+                    console.log(`💡 Menambahkan label 'Fixed' karena status PR terdeteksi ditutup.`);
+                  }
+
+                  // 3. Eksekusi suntik label baru jika ada daftar antrean
+                  if (labelsToPush.length > 0) {
                     await github.rest.issues.addLabels({
                       owner, repo,
                       issue_number: issue.number,
-                      labels: labelsToAdd
+                      labels: labelsToPush
                     });
                   }
                   
-                  console.log(`✅ Berhasil! Issue #${issue.number} telah diperbarui dengan data Advisory terkini.`);
+                  console.log(`✅ Berhasil! Issue #${issue.number} telah disinkronisasikan dan diperbarui labelnya.`);
                   updatedCount++;
                 } else {
                   console.log(`➖ Issue #${issue.number} sudah sinkron & tidak ada info baru. Dilewati.`);
