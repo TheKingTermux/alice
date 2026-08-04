@@ -8,6 +8,7 @@ on:
       - "PR Merge Watcher"
       - "Security PR"
       - "Remove Unused Branches"
+      - "Sync Security Advisories"
     types:
       - completed
 
