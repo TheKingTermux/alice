@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: Generate Bot Token
         id: bot_token
@@ -84,6 +84,8 @@ jobs:
               }
 
               console.log(`⚠️ Menemukan ${uniqueVulns.length} kerentanan unik! Memulai fetch Advisory API...`);
+
+              let createdIssueNumbers = []; // Array penampung nomor isu untuk digabung
 
               for (const vuln of uniqueVulns) {
                 const ghsa = vuln.ghsa.toUpperCase();
@@ -254,20 +256,40 @@ jobs:
                   console.log(`Updated issue #${issueNumber}: ${title}`);
                 }
 
-                // Tempel link ke PR
-                if (issueNumber) {
-                  const prData = await github.rest.pulls.get({ owner, repo, pull_number: prNumber });
-                  const currentPrBody = prData.data.body || '';
-                  const closingKeywordRegex = new RegExp(`(?:close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)\\s+#${issueNumber}\\b`, 'i');
-                  
-                  if (!closingKeywordRegex.test(currentPrBody)) {
+                // Masukkan nomor isu ke array jika valid
+                if (issueNumber && !createdIssueNumbers.includes(issueNumber)) {
+                  createdIssueNumbers.push(issueNumber);
+                }
+              }
+
+              // =================================================================
+              // 5. UPDATE DESKRIPSI PR HANYA SEKALI (DIGABUNG JADI SATU BARIS)
+              // =================================================================
+              if (createdIssueNumbers.length > 0) {
+                const prData = await github.rest.pulls.get({ owner, repo, pull_number: prNumber });
+                const currentPrBody = prData.data.body || '';
+
+                const closingString = createdIssueNumbers.map(num => `Closes #${num}`).join(', ');
+                const taskBlock = `**🛡️ Auto-linked Security Task:** ${closingString}`;
+
+                if (!currentPrBody.includes('**🛡️ Auto-linked Security Task:**')) {
+                  await github.rest.pulls.update({ 
+                    owner, repo, pull_number: prNumber, 
+                    body: currentPrBody + `\n\n---\n${taskBlock}` 
+                  });
+                  console.log(`✅ Berhasil menyematkan tautan gabungan: ${closingString}`);
+                } else {
+                  const updatedPrBody = currentPrBody.replace(/\*\*🛡️ Auto-linked Security Task:\*\*.*?(?=\n\n|$)/s, taskBlock);
+                  if (updatedPrBody !== currentPrBody) {
                     await github.rest.pulls.update({ 
                       owner, repo, pull_number: prNumber, 
-                      body: currentPrBody + `\n\n---\n**🛡️ Auto-linked Security Task:** Closes #${issueNumber}` 
+                      body: updatedPrBody 
                     });
+                    console.log(`🔄 Memperbarui tautan gabungan Isu pada PR: ${closingString}`);
                   }
                 }
               }
+
             } catch (err) {
               console.error(`❌ Gagal mengekstrak kerentanan: ${err.message}`);
             }
