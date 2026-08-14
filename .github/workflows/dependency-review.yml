@@ -1,4 +1,5 @@
 name: 'Dependency Review & Security Alert'
+
 on:
   pull_request:
     types: [opened, synchronize, reopened]
@@ -19,21 +20,20 @@ jobs:
         id: bot_token
         uses: actions/create-github-app-token@v3
         with:
-          client-id: ${{ secrets.BOT_APP_ID }} # Pastikan pakai client-id agar tidak deprecation
+          client-id: ${{ secrets.BOT_APP_ID }}
           private-key: ${{ secrets.BOT_PRIVATE_KEY }}
 
       # 1. JALANKAN PENJAGA GERBANG
-      - name: 'Dependency Review'
+      - name: 'Dependency Review Check'
         uses: actions/dependency-review-action@v5.0.0
         env:
-          # Mengalihkan token pemindaian agar menggunakan identitas bot pribadi
           GITHUB_TOKEN: ${{ steps.bot_token.outputs.token }}
         with:
-          fail-on-severity: low # Akan langsung menggagalkan PR jika ada kerentanan apa pun
+          fail-on-severity: low
 
-      # 2. JIKA GAGAL: Ekstrak kerentanan dan otomatis buat Issue
+      # 2. JIKA GAGAL: Ekstrak kerentanan dan otomatis buat Issue ala Advisory API
       - name: Extract Vuln & Auto Create Issue
-        if: failure() # ⚠️ Baris ini wajib, agar skrip hanya jalan kalau step review di atas merah/gagal
+        if: failure()
         uses: actions/github-script@v9
         with:
           github-token: ${{ steps.bot_token.outputs.token }}
@@ -47,40 +47,32 @@ jobs:
             const prAuthor = payload.pull_request.user.login;
             const baseSha = payload.pull_request.base.sha;
             const headSha = payload.pull_request.head.sha;
+            const botType = 'Dependency Review';
 
             console.log(`🔍 Memindai grafik kerentanan antara ${baseSha} dan ${headSha}...`);
 
             try {
-              // Menarik data perbandingan dependensi langsung dari API GitHub
+              // Menarik list dependensi rentan dari PR
               const compare = await github.request('GET /repos/{owner}/{repo}/dependency-graph/compare/{basehead}', {
-                owner,
-                repo,
-                basehead: `${baseSha}...${headSha}`
+                owner, repo, basehead: `${baseSha}...${headSha}`
               });
 
               let rawVulns = [];
-              
-              // Ekstrak semua paket yang membawa kerentanan
               for (const dep of compare.data) {
                 if (dep.vulnerabilities && dep.vulnerabilities.length > 0) {
                   for (const vuln of dep.vulnerabilities) {
                     rawVulns.push({
                       pkg: dep.name,
                       ghsa: vuln.advisory_ghsa_id,
-                      severity: vuln.severity,
-                      summary: vuln.advisory_summary,
                       vulnRange: vuln.vulnerable_version_range || 'Unknown'
                     });
                   }
                 }
               }
 
-              if (rawVulns.length === 0) {
-                console.log("✅ Tidak ada kerentanan aktif yang terbaca oleh API.");
-                return;
-              }
+              if (rawVulns.length === 0) return;
 
-              // Filter duplikat agar tidak spam tiket Issue untuk paket yang sama
+              // Filter duplikat
               const uniqueVulns = [];
               const seen = new Set();
               for (const v of rawVulns) {
@@ -91,40 +83,43 @@ jobs:
                 }
               }
 
-              console.log(`⚠️ Menemukan ${uniqueVulns.length} kerentanan unik! Mengeksekusi pembuatan Issue...`);
+              console.log(`⚠️ Menemukan ${uniqueVulns.length} kerentanan unik! Memulai fetch Advisory API...`);
 
               for (const vuln of uniqueVulns) {
-                let ghsa = vuln.ghsa.toUpperCase();
-                let pkg = vuln.pkg;
-                let cve = 'No CVE';
-                let osvId = 'No Alt ID';
-                let vulnRange = vuln.vulnRange;
+                const ghsa = vuln.ghsa.toUpperCase();
+                const pkg = vuln.pkg;
+                const prIntro = `🚨 **Dependency Review Alert:** Kerentanan diperkenalkan melalui PR #${prNumber} oleh @${prAuthor}.\n\n`;
                 
-                let severity = vuln.severity ? vuln.severity.toUpperCase() : 'UNKNOWN';
+                // Set nilai fallback awal jika API gagal
+                let title = `Security Advisory: ${pkg} (${ghsa})`;
+                let summaryDesc = prIntro + 'No description available.';
+                let severity = 'UNKNOWN';
                 let cvss = 'N/A';
                 let vectorString = 'N/A';
-                let title = `Security Advisory: ${pkg} (${ghsa})`;
-                let summaryDesc = `🚨 **Dependency Review Alert:** Kerentanan diperkenalkan melalui PR #${prNumber} oleh @${prAuthor}.\n\n${vuln.summary}`;
+                let cve = 'No CVE';
+                let osvId = 'No Alt ID';
                 let cweList = 'N/A';
+                let vulnRange = vuln.vulnRange;
                 let patched = 'None';
-                const botType = 'Dependency Review';
 
-                // Fetch Ganda ke Public API
+                // ==========================================
+                // 3. FETCH KE GITHUB ADVISORY API (Logic Sync)
+                // ==========================================
                 try {
-                  console.log(`🔍 Mengambil data kerentanan resmi untuk ${ghsa} via Public API...`);
+                  console.log(`\n🔍 Mengambil data resmi untuk ${ghsa}...`);
                   const advResponse = await fetch(`https://api.github.com/advisories/${ghsa}`);
                   
                   if (advResponse.ok) {
                     const advData = await advResponse.json();
                     
-                    if (advData.summary) title = `Security: ${severity} - ${pkg} (${ghsa})`;
-                    if (advData.cvss && advData.cvss.score) cvss = advData.cvss.score.toString();
-                    if (advData.cvss && advData.cvss.vector_string) vectorString = advData.cvss.vector_string;
-                    if (advData.cve_id) cve = advData.cve_id;
-
-                    if (advData.cwes && advData.cwes.length > 0) {
-                      cweList = advData.cwes.map(c => `${c.cwe_id} (${c.name})`).join(', ');
-                    }
+                    // Timpa dengan data Advisory TERBARU
+                    title = advData.summary || title;
+                    summaryDesc = advData.description ? (prIntro + advData.description) : summaryDesc;
+                    severity = advData.severity ? advData.severity.toUpperCase() : severity;
+                    cvss = advData.cvss && advData.cvss.score ? advData.cvss.score.toString() : cvss;
+                    vectorString = advData.cvss && advData.cvss.vector_string ? advData.cvss.vector_string : vectorString;
+                    cve = advData.cve_id ? advData.cve_id : cve;
+                    cweList = advData.cwes && advData.cwes.length > 0 ? advData.cwes.map(c => `${c.cwe_id} (${c.name})`).join(', ') : cweList;
 
                     if (advData.vulnerabilities && advData.vulnerabilities.length > 0) {
                       let ranges = [];
@@ -137,9 +132,11 @@ jobs:
                       if (fixes.length > 0) patched = fixes.join(' / ');
                     }
                     console.log(`✅ Data berhasil diamankan dari Public API.`);
+                  } else {
+                    console.log(`⚠️ API mengembalikan status ${advResponse.status}, menggunakan data fallback...`);
                   }
-                } catch (apiError) {
-                  console.log(`⚠️ Gagal fetch Public API (${apiError.message}).`);
+                } catch (e) {
+                  console.log(`⚠️ Gagal fetch Public API: ${e.message}`);
                 }
 
                 // Parser CVSS
@@ -169,22 +166,10 @@ jobs:
 
                 const cvssMetrics = parseCvssVector(vectorString);
 
-                // Labelisasi
-                let issueLabels = ['Security', 'Auto Create Issues', 'dependencies'];
-                let severityLabel = 'Low';
-                if (severity === 'CRITICAL') severityLabel = 'Critical';
-                else if (severity === 'HIGH') severityLabel = 'High';
-                else if (severity === 'MODERATE') severityLabel = 'Moderate';
-                else severity = 'LOW';
-                issueLabels.push(severityLabel);
-
-                const issues = await github.paginate(
-                  github.rest.issues.listForRepo,
-                  { owner, repo, state: 'all', labels: 'Auto Create Issues', per_page: 100 }
-                );
-                const existing = issues.find(i => i.title === title);
-
-                const body = `## 🛡️ Security Vulnerability (from PR #${prNumber})
+                // ==========================================
+                // 4. RANGKAI ULANG BODY (Template Sync)
+                // ==========================================
+                const body = `## 🛡️ Security Vulnerability (from ${botType} PR #${prNumber})
 
             ### Description
             ${summaryDesc}
@@ -222,12 +207,24 @@ jobs:
             ---
             _Auto-generated from ${botType}. Fix by removing or updating the vulnerable package in PR #${prNumber}._`;
 
+                // TENTUKAN LABEL SEVERITY
+                let targetSeverityLabel = 'Low';
+                if (severity === 'CRITICAL') targetSeverityLabel = 'Critical';
+                else if (severity === 'HIGH') targetSeverityLabel = 'High';
+                else if (severity === 'MODERATE') targetSeverityLabel = 'Moderate';
+
+                const issues = await github.paginate(github.rest.issues.listForRepo, {
+                  owner, repo, state: 'all', labels: 'Auto Create Issues', per_page: 100
+                });
+                const existing = issues.find(i => i.title === title || i.body.includes(ghsa));
+
                 let issueNumber = null;
 
                 if (!existing) {
                   const createdIssue = await github.rest.issues.create({
                     owner, repo, title, body,
-                    labels: issueLabels, assignees: ['TheKingTermux'], milestone: 1
+                    labels: ['Security', 'Auto Create Issues', 'dependencies', targetSeverityLabel],
+                    assignees: ['TheKingTermux'], milestone: 1
                   });
                   issueNumber = createdIssue.data.number;
                   console.log(`Created issue #${issueNumber}: ${title}`);
@@ -236,15 +233,28 @@ jobs:
                     owner, repo, issue_number: existing.number,
                     body, state: 'open', milestone: 1
                   });
+                  
                   const currentLabels = existing.labels.map(l => l.name);
-                  const missingLabels = issueLabels.filter(l => !currentLabels.includes(l));
-                  if (missingLabels.length > 0) {
-                    await github.rest.issues.addLabels({ owner, repo, issue_number: existing.number, labels: missingLabels });
+                  const severityPool = ['Low', 'Moderate', 'High', 'Critical'];
+                  const wrongSeverityLabels = currentLabels.filter(l => severityPool.includes(l) && l !== targetSeverityLabel);
+
+                  // Hapus label salah
+                  for (const wrongLabel of wrongSeverityLabels) {
+                    try {
+                      await github.rest.issues.removeLabel({ owner, repo, issue_number: existing.number, name: wrongLabel });
+                    } catch (e) {}
                   }
+
+                  // Tambah label baru
+                  if (!currentLabels.includes(targetSeverityLabel)) {
+                    await github.rest.issues.addLabels({ owner, repo, issue_number: existing.number, labels: [targetSeverityLabel] });
+                  }
+                  
                   issueNumber = existing.number;
                   console.log(`Updated issue #${issueNumber}: ${title}`);
                 }
 
+                // Tempel link ke PR
                 if (issueNumber) {
                   const prData = await github.rest.pulls.get({ owner, repo, pull_number: prNumber });
                   const currentPrBody = prData.data.body || '';
@@ -259,5 +269,5 @@ jobs:
                 }
               }
             } catch (err) {
-              console.error(`❌ Gagal mengekstrak kerentanan dari Dependency Graph API: ${err.message}`);
+              console.error(`❌ Gagal mengekstrak kerentanan: ${err.message}`);
             }
