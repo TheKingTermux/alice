@@ -2,9 +2,8 @@ name: Dependabot Auto Fixer
 
 on:
   schedule:
-    # Berjalan otomatis setiap hari pada pukul 00:00 UTC
     - cron: '0 0 * * *'
-  workflow_dispatch: # Tombol manual untuk eksekusi darurat
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -46,10 +45,7 @@ jobs:
 
             try {
               const response = await github.request('GET /repos/{owner}/{repo}/dependabot/alerts', {
-                owner,
-                repo,
-                state: 'open',
-                per_page: 100
+                owner, repo, state: 'open', per_page: 100
               });
 
               const alerts = response.data;
@@ -64,23 +60,30 @@ jobs:
                 const hasFix = alert.security_advisory.vulnerabilities.some(v => v.first_patched_version !== null);
 
                 if (hasFix) {
-                  console.log(`\n🌿 Parasit ditemukan pada paket [${packageName}] (${ghsaId}). Terdapat obat penangkal!`);
-                  console.log(`👉 Memaksa Dependabot untuk membuat PR perbaikan untuk Alert #${alertNumber}...`);
-
+                  console.log(`\n🌿 Parasit [${packageName}] (${ghsaId}). Terdapat obat penangkal!`);
                   triggeredList.push(`• \`${packageName}\` (${ghsaId})`);
                 } else {
-                  console.log(`\n🍂 Parasit [${packageName}] (${ghsaId}) belum memiliki obat penangkal resmi. Dilewati.`);
+                  console.log(`\n🍂 Parasit [${packageName}] (${ghsaId}) belum memiliki obat. Dilewati.`);
                   noFixList.push(`• \`${packageName}\``);
                 }
               }
-
             } catch (error) {
               console.error(`❌ Patroli terganggu oleh anomali eksternal: ${error.message}`);
               errorCount++;
             }
             
-            const triggeredText = triggeredList.length > 0 ? triggeredList.join('\n') : '*Tidak ada paket.*';
-            const noFixText = noFixList.length > 0 ? noFixList.join('\n') : '*Tidak ada.*';
+            // LOGIKA PEMOTONG KARAKTER (ANTI LIMIT 1024 DISCORD)
+            const maxDisplay = 15; // Maksimal list yang ditampilkan di discord
+            
+            let triggeredText = triggeredList.length > 0 ? triggeredList.slice(0, maxDisplay).join('\n') : '*Tidak ada paket.*';
+            if (triggeredList.length > maxDisplay) {
+              triggeredText += `\n*...dan ${triggeredList.length - maxDisplay} paket lainnya.*`;
+            }
+
+            let noFixText = noFixList.length > 0 ? noFixList.slice(0, maxDisplay).join('\n') : '*Tidak ada.*';
+            if (noFixList.length > maxDisplay) {
+              noFixText += `\n*...dan ${noFixList.length - maxDisplay} paket lainnya.*`;
+            }
 
             core.setOutput('total', totalAlerts);
             core.setOutput('triggered_count', triggeredList.length);
@@ -88,11 +91,10 @@ jobs:
             core.setOutput('nofix_text', noFixText);
             core.setOutput('errors', errorCount);
 
-      # --- NOTIFIKASI 1: Dikirim oleh Collei menggunakan webhook EARLY ---
       - name: Kirim Laporan Pertama ke Discord (Collei - Pemicuan)
         if: env.DISCORD_URL != '' && always()
         env:
-          DISCORD_URL: ${{ secrets.DISCORD_WEBHOOK_PATROL_EARLY }} # Webhook khusus Early
+          DISCORD_URL: ${{ secrets.DISCORD_WEBHOOK_PATROL_EARLY }}
           TOTAL_ALERTS: ${{ steps.patrol_task.outputs.total }}
           TRIGGERED_COUNT: ${{ steps.patrol_task.outputs.triggered_count }}
           TRIGGERED_TEXT: ${{ steps.patrol_task.outputs.triggered_text }}
@@ -126,7 +128,7 @@ jobs:
             }' > discord_collei.json
 
           curl -H "Content-Type: application/json" -X POST -d @discord_collei.json "$DISCORD_URL"
-          echo "📬 Notif 1 (Collei) terkirim dari Job 1!"
+          echo -e "\n📬 Notif 1 (Collei) selesai dikirim ke Discord!"
 
   check-dependabot-response:
     needs: forest-patrol
@@ -159,27 +161,19 @@ jobs:
 
             try {
               const response = await github.request('GET /repos/{owner}/{repo}/dependabot/alerts', {
-                owner,
-                repo,
-                state: 'open',
-                per_page: 100
+                owner, repo, state: 'open', per_page: 100
               });
 
               for (const alert of response.data) {
                 const packageName = alert.dependency.package.name;
-                const alertNumber = alert.number;
                 const alertUrl = alert.html_url;
                 
                 const detailResponse = await github.request('GET /repos/{owner}/{repo}/dependabot/alerts/{alert_number}', {
-                  owner,
-                  repo,
-                  alert_number: alertNumber
+                  owner, repo, alert_number: alert.number
                 });
                 
-                const alertDetail = detailResponse.data;
-                
-                if (alertDetail.error_details) {
-                  const errorMsg = alertDetail.error_details.message;
+                if (detailResponse.data.error_details) {
+                  const errorMsg = detailResponse.data.error_details.message;
                   failedUpdates.push(`• \`${packageName}\`: ${errorMsg} ([Detail](${alertUrl}))`);
                 }
               }
@@ -187,16 +181,20 @@ jobs:
               console.error(`⚠️ Gagal memindai ulang respons: ${error.message}`);
             }
 
-            const failedText = failedUpdates.length > 0 ? failedUpdates.join('\n') : '*Tidak ada kendala kegagalan yang dilaporkan oleh sistem.*';
+            // LOGIKA PEMOTONG KARAKTER (ANTI LIMIT)
+            const maxDisplay = 10;
+            let failedText = failedUpdates.length > 0 ? failedUpdates.slice(0, maxDisplay).join('\n') : '*Tidak ada kendala kegagalan yang dilaporkan oleh sistem.*';
+            if (failedUpdates.length > maxDisplay) {
+              failedText += `\n*...dan ${failedUpdates.length - maxDisplay} gagal lainnya.*`;
+            }
             
             core.setOutput('failed_count', failedUpdates.length);
             core.setOutput('failed_text', failedText);
 
-      # --- NOTIFIKASI 2: Dikirim oleh Tighnari menggunakan webhook utama PATROL ---
       - name: Kirim Laporan Kedua ke Discord (Tighnari - Evaluasi)
         if: env.DISCORD_URL != '' && always()
         env:
-          DISCORD_URL: ${{ secrets.DISCORD_WEBHOOK_PATROL }} # Webhook utama
+          DISCORD_URL: ${{ secrets.DISCORD_WEBHOOK_PATROL }}
           FAILED_COUNT: ${{ steps.check_task.outputs.failed_count }}
           FAILED_TEXT: ${{ steps.check_task.outputs.failed_text }}
         run: |
@@ -224,4 +222,4 @@ jobs:
             }' > discord_tighnari_2.json
 
           curl -H "Content-Type: application/json" -X POST -d @discord_tighnari_2.json "$DISCORD_URL"
-          echo "📬 Notif 2 (Tighnari) terkirim dari Job 2 setelah jeda 5 menit!"
+          echo -e "\n📬 Notif 2 (Tighnari) terkirim dari Job 2 setelah jeda 5 menit!"
