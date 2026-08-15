@@ -2,9 +2,8 @@ name: Sync Security Advisories
 
 on:
   schedule:
-    # Berjalan setiap hari Minggu jam 00:00 UTC (1 minggu sekali)
-    - cron: '0 0 * * 0'
-  workflow_dispatch: # Tombol manual buat testing
+    - cron: '0 0 * * 0' # Setiap Minggu jam 00:00 UTC
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -32,18 +31,12 @@ jobs:
 
             console.log("🔍 Mengambil semua tiket Issue Keamanan...");
             
-            // 1. Ambil semua issue dengan label 'Security' dan 'Auto Create Issues' (Open & Closed)
             const issues = await github.paginate(github.rest.issues.listForRepo, {
-              owner,
-              repo,
-              state: 'all',
-              labels: 'Security,Auto Create Issues',
-              per_page: 100
+              owner, repo, state: 'all', labels: 'Auto Create Issues', per_page: 100
             });
 
             console.log(`Ditemukan ${issues.length} tiket untuk disinkronisasi.`);
 
-            // Variabel penghitung untuk laporan Scribe
             let updatedCount = 0;
             let syncedCount = 0;
             let failedCount = 0;
@@ -52,87 +45,113 @@ jobs:
               const oldBody = issue.body || '';
               const currentLabels = issue.labels.map(l => l.name);
               
-              // 2. Cari GHSA ID dari teks body Issue lama
+              // 1. Ekstrak GHSA ID
               const ghsaMatch = oldBody.match(/\*\*GHSA ID:\*\*\s*(GHSA-[A-Z0-9-]+)/i);
               if (!ghsaMatch) {
                 syncedCount++; 
                 continue; 
               }
-              
               const ghsa = ghsaMatch[1].toUpperCase();
               console.log(`\n⏳ Menyelaraskan Issue #${issue.number} (${ghsa})...`);
 
-              try {
-                // 3. Fetch data TERBARU dari GitHub Advisory API
-                const advResponse = await fetch(`https://api.github.com/advisories/${ghsa}`);
-                if (!advResponse.ok) {
-                  console.log(`⚠️ API mengembalikan status ${advResponse.status}, melewati...`);
-                  failedCount++;
-                  continue;
-                }
-                const advData = await advResponse.json();
-
-                // 4. Ekstrak data metadata lama
-                const prMatch = oldBody.match(/from (Renovate|Dependabot) PR #(\d+)/i) || [];
-                const botType = prMatch[1] || 'Dependabot'; const prNumber = prMatch[2] || 'Unknown';
+              // 2. Deteksi Jenis Issue (Dari Alert atau dari PR)
+              let sourceUrl = '';
+              let sourceNumber = '';
+              let sourceType = 'PR'; // Default: berasal dari Pull Request
+              
+              // Cek apakah ini berasal dari Dependabot Alerts (bot TheKingTermux)
+              const alertMatch = oldBody.match(/\[Dependabot Alert #(\d+)\]\((https:\/\/[^\s\)]+)\)/i);
+              if (alertMatch) {
+                sourceType = 'Alert';
+                sourceNumber = alertMatch[1];
+                sourceUrl = alertMatch[2];
+              } else {
+                // Jika dari PR
+                const prMatch = oldBody.match(/PR #(\d+)/i) || [];
+                sourceNumber = prMatch[1] || 'Unknown';
                 const urlMatch = oldBody.match(/- PR: (https:\/\/github.com\/[^\s]+)/i) || [];
-                const prUrl = urlMatch[1] || `https://github.com/${owner}/${repo}/pull/${prNumber}`;
-                const pkgMatch = oldBody.match(/\*\*Package:\*\*\s*([^\n]+)/i) || [];
-                const pkg = pkgMatch[1] || 'Unknown';
-                const osvMatch = oldBody.match(/\*\*Alt ID \(OSV\/Snyk\):\*\*\s*([^\n]+)/i) || [];
-                const osvId = osvMatch[1] || 'No Alt ID';
-                const vulnRangeMatch = oldBody.match(/\*\*Affected versions:\*\*\n\s+- ([^\n]+)/i) || [];
-                const vulnRange = vulnRangeMatch[1] || 'Unknown';
-                const patchedMatch = oldBody.match(/\*\*Patched versions:\*\*\s*([^\n]+)/i) || [];
-                const patched = patchedMatch[1] || 'None';
+                sourceUrl = urlMatch[1] || `https://github.com/${owner}/${repo}/pull/${sourceNumber}`;
+              }
 
-                // 5. Timpa dengan data Advisory TERBARU
-                const title = advData.summary || issue.title;
-                const summaryDesc = advData.description || 'No description available.';
-                const severity = advData.severity ? advData.severity.toUpperCase() : 'UNKNOWN';
-                const cvss = advData.cvss && advData.cvss.score ? advData.cvss.score.toString() : 'N/A';
-                const vectorString = advData.cvss && advData.cvss.vector_string ? advData.cvss.vector_string : 'N/A';
-                const cve = advData.cve_id ? advData.cve_id : 'No CVE';
-                const cweList = advData.cwes && advData.cwes.length > 0 ? advData.cwes.map(c => `${c.cwe_id} (${c.name})`).join(', ') : 'N/A';
+              const pkgMatch = oldBody.match(/\*\*Package:\*\*\s*`?([^\n`]+)`?/i) || [];
+              const pkg = pkgMatch[1] ? pkgMatch[1].trim() : 'Unknown';
+              
+              const osvMatch = oldBody.match(/\*\*Alt ID \(OSV\/Snyk\):\*\*\s*([^\n]+)/i) || [];
+              const osvId = osvMatch[1] || 'No Alt ID';
 
-                // Fungsi parser CVSS v3 Base Metrics
-                function parseCvssVector(vector) {
-                  if (!vector || vector === 'N/A') return '*Data metrik belum dipublikasikan oleh repositori database.*';
-                  const map = {
-                    'AV:N': 'Network', 'AV:A': 'Adjacent', 'AV:L': 'Local', 'AV:P': 'Physical',
-                    'AC:L': 'Low', 'AC:H': 'High',
-                    'PR:N': 'None', 'PR:L': 'Low', 'PR:H': 'High',
-                    'UI:N': 'None', 'UI:R': 'Required',
-                    'S:U': 'Unchanged', 'S:C': 'Changed',
-                    'C:N': 'None', 'C:L': 'Low', 'C:H': 'High',
-                    'I:N': 'None', 'I:L': 'Low', 'I:H': 'High',
-                    'A:N': 'None', 'A:L': 'Low', 'A:H': 'High'
-                  };
-                  const parts = vector.replace(/^CVSS:3\.[01]\//, '').split('/');
-                  let result = `**Vector:** \`${vector}\`\n`;
-                  parts.forEach(p => {
-                    const [k, v] = p.split(':');
-                    if (map[`${k}:${v}`]) {
-                      const name = k === 'AV' ? 'Attack vector' : k === 'AC' ? 'Attack complexity' : k === 'PR' ? 'Privileges required' : k === 'UI' ? 'User interaction' : k === 'S' ? 'Scope' : k === 'C' ? 'Confidentiality' : k === 'I' ? 'Integrity' : k === 'A' ? 'Availability' : k;
-                      result += `- **${name}:** ${map[`${k}:${v}`]}\n`;
+              let title = issue.title;
+              let descText = 'No description available.';
+              let severity = 'UNKNOWN';
+              let cvss = 'N/A';
+              let vectorString = 'N/A';
+              let cve = 'No CVE';
+              let cweList = 'N/A';
+              let vulnRange = 'Unknown';
+              let patched = 'None';
+
+              try {
+                // 3. Tarik Data Terbaru pakai Octokit (Anti Rate-Limit)
+                const advResponse = await github.request('GET /advisories/{ghsa_id}', { ghsa_id: ghsa });
+                const advData = advResponse.data;
+
+                title = advData.summary || title;
+                descText = advData.description || descText;
+                severity = advData.severity ? advData.severity.toUpperCase() : severity;
+                cvss = advData.cvss && advData.cvss.score ? advData.cvss.score.toString() : cvss;
+                vectorString = advData.cvss && advData.cvss.vector_string ? advData.cvss.vector_string : vectorString;
+                cve = advData.cve_id || cve;
+                
+                if (advData.cwes && advData.cwes.length > 0) {
+                  cweList = advData.cwes.map(c => `- **${c.cwe_id}**: ${c.name}`).join('\n');
+                }
+
+                if (advData.vulnerabilities && advData.vulnerabilities.length > 0) {
+                  let ranges = []; let fixes = [];
+                  advData.vulnerabilities.forEach(v => {
+                    if (v.package && v.package.name === pkg) {
+                      if (v.vulnerable_version_range) ranges.push(v.vulnerable_version_range);
+                      if (v.first_patched_version) fixes.push(v.first_patched_version);
                     }
                   });
-                  return result;
+                  if (ranges.length > 0) vulnRange = ranges.join('\n  - ');
+                  if (fixes.length > 0) patched = fixes.join('\n  - ');
                 }
+              } catch (e) {
+                console.log(`⚠️ Gagal fetch dari API Publik: ${e.message}`);
+                failedCount++;
+                continue; // Skip jika gagal narik data, jangan merusak body yang ada
+              }
 
-                const cvssMetrics = parseCvssVector(vectorString);
+              if (severity === 'MEDIUM') severity = 'MODERATE';
+              if (severity !== 'UNKNOWN' && severity !== 'LOW') {
+                 title = `Security: ${severity} - ${pkg} (${ghsa})`;
+              }
 
-                // 6. Rangkai Ulang Body
-                const newBody = `## 🛡️ Security Vulnerability (from ${botType} PR #${prNumber})
+              // CVSS Parser
+              function parseCvssVector(vector) {
+                if (!vector || vector === 'N/A') return '*Data metrik belum dipublikasikan oleh repositori database.*';
+                const map = { 'AV:N':'Network', 'AV:A':'Adjacent', 'AV:L':'Local', 'AV:P':'Physical', 'AC:L':'Low', 'AC:H':'High', 'PR:N':'None', 'PR:L':'Low', 'PR:H':'High', 'UI:N':'None', 'UI:R':'Required', 'S:U':'Unchanged', 'S:C':'Changed', 'C:N':'None', 'C:L':'Low', 'C:H':'High', 'I:N':'None', 'I:L':'Low', 'I:H':'High', 'A:N':'None', 'A:L':'Low', 'A:H':'High' };
+                const parts = vector.replace(/^CVSS:3\.[01]\//, '').split('/');
+                let result = `**Vector:** \`${vector}\`\n`;
+                parts.forEach(p => { const [k, v] = p.split(':'); if (map[`${k}:${v}`]) { const name = k==='AV'?'Attack vector':k==='AC'?'Attack complexity':k==='PR'?'Privileges required':k==='UI'?'User interaction':k==='S'?'Scope':k==='C'?'Confidentiality':k==='I'?'Integrity':k==='A'?'Availability':k; result += `- **${name}:** ${map[`${k}:${v}`]}\n`; } });
+                return result;
+              }
+              const cvssMetrics = parseCvssVector(vectorString);
+
+              // 4. RANGKAI BODY SESUAI JENIS SUMBER (Alert vs PR)
+              let newBody = "";
+              
+              if (sourceType === 'Alert') {
+                newBody = `🚨 **Sumber Peringatan:** [Dependabot Alert #${sourceNumber}](${sourceUrl})
 
             ### Description
-            ${summaryDesc}
+            ${descText}
             
             ### Severity Check
-            - ${severity === 'LOW' ? '☑' : '☐'} Low
-            - ${severity === 'MODERATE' ? '☑' : '☐'} Moderate
-            - ${severity === 'HIGH' ? '☑' : '☐'} High
-            - ${severity === 'CRITICAL' ? '☑' : '☐'} Critical
+            - [${severity === 'LOW' ? 'x' : ' '}] Low
+            - [${severity === 'MODERATE' ? 'x' : ' '}] Moderate
+            - [${severity === 'HIGH' ? 'x' : ' '}] High
+            - [${severity === 'CRITICAL' ? 'x' : ' '}] Critical
             
             ### Severity Score
             ${cvss} / 10
@@ -146,95 +165,106 @@ jobs:
             - **Alt ID (OSV/Snyk):** ${osvId}
             
             ### Weaknesses
-            - ${cweList}
+            ${cweList !== 'N/A' ? cweList : '- N/A'}
             
             ### Affected
-            - **Package:** ${pkg}
+            - **Package:** \`${pkg}\`
             - **Affected versions:**
               - ${vulnRange}
-            - **Patched versions:** ${patched}
+            - **Patched versions:**
+              - ${patched}
             
             ### References
             - Advisory: https://github.com/advisories/${ghsa}
-            - PR: ${prUrl}
+            - Alert Link: ${sourceUrl}
             
             ---
-            _Auto-generated from ${botType} security PR. Fix by merging PR #${prNumber}._`;
-
-                // TENTUKAN LABEL SEVERITY TERBARU YANG SEHARUSNYA
-                let targetSeverityLabel = 'Low';
-                if (severity === 'CRITICAL') targetSeverityLabel = 'Critical';
-                else if (severity === 'HIGH') targetSeverityLabel = 'High';
-                else if (severity === 'MODERATE') targetSeverityLabel = 'Moderate';
-
-                // Cari apakah ada label keparahan yang salah/lama menempel saat ini
-                const severityPool = ['Low', 'Moderate', 'High', 'Critical'];
-                let wrongSeverityLabels = currentLabels.filter(l => severityPool.includes(l) && l !== targetSeverityLabel);
+            _Auto-generated from Dependabot Alert. Periksa Alert Link di atas untuk detail atau resolve masalah._`;
+              
+              } else {
+                // Asumsi Source Type adalah 'PR'
+                const botTypeDetect = oldBody.match(/from (Dependency Review|Renovate|Dependabot)/i);
+                const botName = botTypeDetect ? botTypeDetect[1] : 'Dependency Review';
                 
-                // Cek status perbaikan untuk manajemen label 'Fixed'
-                let fixedLabelToAdd = (issue.state === 'closed' && !currentLabels.includes('Fixed'));
-                let needLabelUpdate = wrongSeverityLabels.length > 0 || !currentLabels.includes(targetSeverityLabel) || fixedLabelToAdd;
+                const prIntro = `🚨 **Dependency Review Alert:** Kerentanan diperkenalkan melalui PR #${sourceNumber}.\n\n`;
 
-                // 7. Bandingkan perubahan isi ATAU manajemen label
-                if (newBody !== oldBody || needLabelUpdate) {
-                  // Jalankan pembaruan teks/judul jika body berubah
-                  await github.rest.issues.update({
-                    owner, repo,
-                    issue_number: issue.number,
-                    title: title,
-                    body: newBody
-                  });
+                newBody = `## 🛡️ Security Vulnerability (from ${botName} PR #${sourceNumber})
 
-                  // ====================================================
-                  // 🛠️ FIX LOGIC: Bersihkan Label Lama & Terapkan yang Baru
-                  // ====================================================
-                  // 1. Hapus label severity lama yang salah jika terdeteksi nyangkut
-                  for (const wrongLabel of wrongSeverityLabels) {
-                    console.log(`🗑️ Menghapus label usang '${wrongLabel}' dari Issue #${issue.number}...`);
-                    try {
-                      await github.rest.issues.removeLabel({
-                        owner, repo,
-                        issue_number: issue.number,
-                        name: wrongLabel
-                      });
-                    } catch (labelErr) {
-                      console.log(`⚠️ Gagal hapus label ${wrongLabel} (mungkin sudah hilang): ${labelErr.message}`);
-                    }
-                  }
+            ### Description
+            ${prIntro}${descText}
+            
+            ### Severity Check
+            - [${severity === 'LOW' ? 'x' : ' '}] Low
+            - [${severity === 'MODERATE' ? 'x' : ' '}] Moderate
+            - [${severity === 'HIGH' ? 'x' : ' '}] High
+            - [${severity === 'CRITICAL' ? 'x' : ' '}] Critical
+            
+            ### Severity Score
+            ${cvss} / 10
 
-                  // 2. Kumpulkan label-label baru yang wajib ditambahkan
-                  let labelsToPush = [];
-                  if (!currentLabels.includes(targetSeverityLabel)) {
-                    labelsToPush.push(targetSeverityLabel);
-                  }
-                  if (fixedLabelToAdd) {
-                    labelsToPush.push('Fixed');
-                    console.log(`💡 Menambahkan label 'Fixed' karena status PR terdeteksi ditutup.`);
-                  }
+            ### CVSS v3 Base Metrics
+            ${cvssMetrics}
+            
+            ### Identifiers
+            - **GHSA ID:** ${ghsa}
+            - **CVE ID:** ${cve}
+            - **Alt ID (OSV/Snyk):** ${osvId}
+            
+            ### Weaknesses
+            ${cweList !== 'N/A' ? cweList : '- N/A'}
+            
+            ### Affected
+            - **Package:** \`${pkg}\`
+            - **Affected versions:**
+              - ${vulnRange}
+            - **Patched versions:**
+              - ${patched}
+            
+            ### References
+            - Advisory: https://github.com/advisories/${ghsa}
+            - PR: ${sourceUrl}
+            
+            ---
+            _Auto-generated from ${botName}. Fix by removing or updating the vulnerable package in PR #${sourceNumber}._`;
+              }
 
-                  // 3. Eksekusi suntik label baru jika ada daftar antrean
-                  if (labelsToPush.length > 0) {
-                    await github.rest.issues.addLabels({
-                      owner, repo,
-                      issue_number: issue.number,
-                      labels: labelsToPush
-                    });
-                  }
-                  
-                  console.log(`✅ Berhasil! Issue #${issue.number} telah disinkronisasikan dan diperbarui labelnya.`);
-                  updatedCount++;
-                } else {
-                  console.log(`➖ Issue #${issue.number} sudah sinkron & tidak ada info baru. Dilewati.`);
-                  syncedCount++;
+              // Manajemen Label
+              let targetSeverityLabel = 'Low';
+              if (severity === 'CRITICAL') targetSeverityLabel = 'Critical';
+              else if (severity === 'HIGH') targetSeverityLabel = 'High';
+              else if (severity === 'MODERATE') targetSeverityLabel = 'Moderate';
+
+              const severityPool = ['Low', 'Moderate', 'High', 'Critical'];
+              let wrongSeverityLabels = currentLabels.filter(l => severityPool.includes(l) && l !== targetSeverityLabel);
+              let fixedLabelToAdd = (issue.state === 'closed' && !currentLabels.includes('Fixed'));
+              let needLabelUpdate = wrongSeverityLabels.length > 0 || !currentLabels.includes(targetSeverityLabel) || fixedLabelToAdd;
+
+              // 5. Bandingkan dan Update
+              if (newBody !== oldBody || needLabelUpdate || title !== issue.title) {
+                await github.rest.issues.update({
+                  owner, repo, issue_number: issue.number, title: title, body: newBody
+                });
+
+                for (const wrongLabel of wrongSeverityLabels) {
+                  try { await github.rest.issues.removeLabel({ owner, repo, issue_number: issue.number, name: wrongLabel }); } catch (e) {}
                 }
 
-              } catch (e) {
-                console.log(`❌ Gagal menyelaraskan Issue #${issue.number}: ${e.message}`);
-                failedCount++;
+                let labelsToPush = [];
+                if (!currentLabels.includes(targetSeverityLabel)) labelsToPush.push(targetSeverityLabel);
+                if (fixedLabelToAdd) labelsToPush.push('Fixed');
+
+                if (labelsToPush.length > 0) {
+                  await github.rest.issues.addLabels({ owner, repo, issue_number: issue.number, labels: labelsToPush });
+                }
+                
+                console.log(`✅ Berhasil! Issue #${issue.number} telah disinkronisasikan.`);
+                updatedCount++;
+              } else {
+                console.log(`➖ Issue #${issue.number} sudah sinkron.`);
+                syncedCount++;
               }
             }
             
-            // Simpan hasil hitungan untuk dikirim ke Discord
             core.setOutput('total', issues.length);
             core.setOutput('updated', updatedCount);
             core.setOutput('synced', syncedCount);
