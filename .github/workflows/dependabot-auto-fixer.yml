@@ -172,16 +172,23 @@ jobs:
                   owner, repo, alert_number: alert.number
                 });
                 
-                if (detailResponse.data.error_details) {
-                  const errorMsg = detailResponse.data.error_details.message;
-                  failedUpdates.push(`• \`${packageName}\`: ${errorMsg} ([Detail](${alertUrl}))`);
+                const alertDetail = detailResponse.data;
+                
+                if (alertDetail.error_details) {
+                  const rawMsg = alertDetail.error_details.message || '';
+                  
+                  // AMBIL BARIS PERTAMA SAJA (Agar singkat dan tidak kepanjangan)
+                  let shortMsg = rawMsg.split('\n')[0].trim();
+                  if (!shortMsg) shortMsg = "Gagal memperbarui dependensi.";
+
+                  console.log(`⚠️ Paket [${packageName}] mendeteksi kendala: ${shortMsg}`);
+                  failedUpdates.push(`• \`${packageName}\`: ${shortMsg} ([Detail](${alertUrl}))`);
                 }
               }
             } catch (error) {
               console.error(`⚠️ Gagal memindai ulang respons: ${error.message}`);
             }
 
-            // LOGIKA PEMOTONG KARAKTER (ANTI LIMIT)
             const maxDisplay = 10;
             let failedText = failedUpdates.length > 0 ? failedUpdates.slice(0, maxDisplay).join('\n') : '*Tidak ada kendala kegagalan yang dilaporkan oleh sistem.*';
             if (failedUpdates.length > maxDisplay) {
