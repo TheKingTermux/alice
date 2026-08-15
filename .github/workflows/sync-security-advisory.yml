@@ -57,16 +57,14 @@ jobs:
               // 2. Deteksi Jenis Issue (Dari Alert atau dari PR)
               let sourceUrl = '';
               let sourceNumber = '';
-              let sourceType = 'PR'; // Default: berasal dari Pull Request
+              let sourceType = 'PR';
               
-              // Cek apakah ini berasal dari Dependabot Alerts (bot TheKingTermux)
               const alertMatch = oldBody.match(/\[Dependabot Alert #(\d+)\]\((https:\/\/[^\s\)]+)\)/i);
               if (alertMatch) {
                 sourceType = 'Alert';
                 sourceNumber = alertMatch[1];
                 sourceUrl = alertMatch[2];
               } else {
-                // Jika dari PR
                 const prMatch = oldBody.match(/PR #(\d+)/i) || [];
                 sourceNumber = prMatch[1] || 'Unknown';
                 const urlMatch = oldBody.match(/- PR: (https:\/\/github.com\/[^\s]+)/i) || [];
@@ -79,7 +77,7 @@ jobs:
               const osvMatch = oldBody.match(/\*\*Alt ID \(OSV\/Snyk\):\*\*\s*([^\n]+)/i) || [];
               const osvId = osvMatch[1] || 'No Alt ID';
 
-              let title = issue.title;
+              let title = issue.title; // Default pake judul yang udah ada
               let descText = 'No description available.';
               let severity = 'UNKNOWN';
               let cvss = 'N/A';
@@ -90,10 +88,11 @@ jobs:
               let patched = 'None';
 
               try {
-                // 3. Tarik Data Terbaru pakai Octokit (Anti Rate-Limit)
+                // 3. Tarik Data Terbaru pakai Octokit
                 const advResponse = await github.request('GET /advisories/{ghsa_id}', { ghsa_id: ghsa });
                 const advData = advResponse.data;
 
+                // TIMPA JUDUL DENGAN ADVISORY SUMMARY (Dan tidak akan ditimpa lagi setelah ini!)
                 title = advData.summary || title;
                 descText = advData.description || descText;
                 severity = advData.severity ? advData.severity.toUpperCase() : severity;
@@ -119,13 +118,10 @@ jobs:
               } catch (e) {
                 console.log(`⚠️ Gagal fetch dari API Publik: ${e.message}`);
                 failedCount++;
-                continue; // Skip jika gagal narik data, jangan merusak body yang ada
+                continue;
               }
 
               if (severity === 'MEDIUM') severity = 'MODERATE';
-              if (severity !== 'UNKNOWN' && severity !== 'LOW') {
-                 title = `Security: ${severity} - ${pkg} (${ghsa})`;
-              }
 
               // CVSS Parser
               function parseCvssVector(vector) {
@@ -138,7 +134,7 @@ jobs:
               }
               const cvssMetrics = parseCvssVector(vectorString);
 
-              // 4. RANGKAI BODY SESUAI JENIS SUMBER (Alert vs PR)
+              // 4. RANGKAI BODY SESUAI JENIS SUMBER
               let newBody = "";
               
               if (sourceType === 'Alert') {
@@ -182,10 +178,8 @@ jobs:
             _Auto-generated from Dependabot Alert. Periksa Alert Link di atas untuk detail atau resolve masalah._`;
               
               } else {
-                // Asumsi Source Type adalah 'PR'
                 const botTypeDetect = oldBody.match(/from (Dependency Review|Renovate|Dependabot)/i);
                 const botName = botTypeDetect ? botTypeDetect[1] : 'Dependency Review';
-                
                 const prIntro = `🚨 **Dependency Review Alert:** Kerentanan diperkenalkan melalui PR #${sourceNumber}.\n\n`;
 
                 newBody = `## 🛡️ Security Vulnerability (from ${botName} PR #${sourceNumber})
