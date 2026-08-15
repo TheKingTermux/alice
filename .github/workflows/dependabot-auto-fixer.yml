@@ -88,21 +88,21 @@ jobs:
             core.setOutput('nofix_text', noFixText);
             core.setOutput('errors', errorCount);
 
-      # --- NOTIFIKASI 1: Murni di akhir job pertama, langsung terkirim detik ini juga ---
-      - name: Kirim Laporan Pertama ke Discord (Tighnari - Pemicuan)
+      # --- NOTIFIKASI 1: Dikirim oleh Collei menggunakan webhook EARLY ---
+      - name: Kirim Laporan Pertama ke Discord (Collei - Pemicuan)
         if: env.DISCORD_URL != '' && always()
         env:
-          DISCORD_URL: ${{ secrets.DISCORD_WEBHOOK_PATROL }}
+          DISCORD_URL: ${{ secrets.DISCORD_WEBHOOK_PATROL_EARLY }} # Webhook khusus Early
           TOTAL_ALERTS: ${{ steps.patrol_task.outputs.total }}
           TRIGGERED_COUNT: ${{ steps.patrol_task.outputs.triggered_count }}
           TRIGGERED_TEXT: ${{ steps.patrol_task.outputs.triggered_text }}
           NOFIX_TEXT: ${{ steps.patrol_task.outputs.nofix_text }}
         run: |
-          DESC="🌿 **Laporan Patroli Hutan Avidya (Fase 1: Pemicuan)**"$'\n\n'"Perintah perbaikan telah disebar ke dahan-dahan kode."
-          FOOTER_TEXT="🍃 Obat telah disebar. Menunggu reaksi ekosistem..."
+          DESC="🌿 **Laporan Pemantauan Awal (Fase 1: Pemicuan)**"$'\n\n'"Perintah perbaikan telah disebar ke dahan-dahan kode."
+          FOOTER_TEXT="🍃 Obat telah disebar. Menunggu guru Tighnari mengevaluasi..."
 
           jq -n \
-            --arg title "🏹 Tighnari's Forest Patrol (Trigger Fixes)" \
+            --arg title "🍃 Collei's Forest Patrol (Trigger Fixes)" \
             --arg desc "$DESC" \
             --arg repo "${{ github.repository }}" \
             --arg total "${TOTAL_ALERTS:-0}" \
@@ -114,7 +114,7 @@ jobs:
               embeds: [{
                 title: $title,
                 description: $desc,
-                color: 6066750,
+                color: 5747514, 
                 fields: [
                   { name: "📁 Wilayah", value: ("`" + $repo + "`"), inline: false },
                   { name: "🌲 Total Alert", value: $total, inline: true },
@@ -123,10 +123,10 @@ jobs:
                 ],
                 footer: { text: $footer }
               }]
-            }' > discord_tighnari_1.json
+            }' > discord_collei.json
 
-          curl -H "Content-Type: application/json" -X POST -d @discord_tighnari_1.json "$DISCORD_URL"
-          echo "📬 Notif 1 terkirim dari Job 1!"
+          curl -H "Content-Type: application/json" -X POST -d @discord_collei.json "$DISCORD_URL"
+          echo "📬 Notif 1 (Collei) terkirim dari Job 1!"
 
   check-dependabot-response:
     needs: forest-patrol
@@ -192,10 +192,11 @@ jobs:
             core.setOutput('failed_count', failedUpdates.length);
             core.setOutput('failed_text', failedText);
 
+      # --- NOTIFIKASI 2: Dikirim oleh Tighnari menggunakan webhook utama PATROL ---
       - name: Kirim Laporan Kedua ke Discord (Tighnari - Evaluasi)
         if: env.DISCORD_URL != '' && always()
         env:
-          DISCORD_URL: ${{ secrets.DISCORD_WEBHOOK_PATROL }}
+          DISCORD_URL: ${{ secrets.DISCORD_WEBHOOK_PATROL }} # Webhook utama
           FAILED_COUNT: ${{ steps.check_task.outputs.failed_count }}
           FAILED_TEXT: ${{ steps.check_task.outputs.failed_text }}
         run: |
@@ -223,4 +224,4 @@ jobs:
             }' > discord_tighnari_2.json
 
           curl -H "Content-Type: application/json" -X POST -d @discord_tighnari_2.json "$DISCORD_URL"
-          echo "📬 Notif 2 terkirim dari Job 2 setelah jeda 5 menit!"
+          echo "📬 Notif 2 (Tighnari) terkirim dari Job 2 setelah jeda 5 menit!"
