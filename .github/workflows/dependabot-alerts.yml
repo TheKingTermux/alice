@@ -222,6 +222,14 @@ jobs:
                     try { await github.rest.issues.removeLabel({ owner, repo, issue_number: existing.number, name: wrongLabel }); } catch (e) {}
                   }
 
+                  // Hapus label 'Sync' lama jika masih menempel
+                  if (currentLabels.includes('Sync')) {
+                    try { 
+                      await github.rest.issues.removeLabel({ owner, repo, issue_number: existing.number, name: 'Sync' }); 
+                      console.log(`🗑️ Menghapus label usang: 'Sync' dari Isu #${existing.number}`);
+                    } catch (e) {}
+                  }
+
                   // Tambahkan label baru jika belum ada di isu terkait
                   const requiredLabels = [targetSeverityLabel, 'Auto Sync', 'Auto Updated', 'Auto Re-Open'];
                   const labelsToAdd = requiredLabels.filter(l => !currentLabels.includes(l));
