@@ -54,7 +54,7 @@ jobs:
                 
                 console.log(`\n⏳ Memproses Alert #${alertNumber} - ${pkg} (${ghsa})...`);
 
-                // 1. Set Nilai Awal dari Bawaan Alert (Jika Advisory belum rilis data)
+                // 1. Set Nilai Awal dari Bawaan Alert
                 let title = alert.security_advisory.summary || `Security Advisory: ${pkg}`;
                 let descText = alert.security_advisory.description || 'No description available.';
                 let severity = alert.security_advisory.severity ? alert.security_advisory.severity.toUpperCase() : 'UNKNOWN';
@@ -67,18 +67,16 @@ jobs:
                 let patched = 'None';
 
                 // ==========================================
-                // 2. FETCH KE API GITHUB ADVISORY (Pake Octokit Auth = 100% Lolos)
+                // 2. FETCH KE API GITHUB ADVISORY
                 // ==========================================
                 try {
                   console.log(`🔍 Menarik metadata resmi untuk ${ghsa}...`);
                   
-                  // Menggunakan github.request memastikan token ikut terbawa dan bebas limit
                   const advResponse = await github.request('GET /advisories/{ghsa_id}', {
                     ghsa_id: ghsa
                   });
                   const advData = advResponse.data;
                   
-                  // Timpa variabel dengan data pusat yang jauh lebih lengkap
                   title = advData.summary || title;
                   descText = advData.description || descText;
                   severity = advData.severity ? advData.severity.toUpperCase() : severity;
@@ -86,17 +84,14 @@ jobs:
                   vectorString = advData.cvss && advData.cvss.vector_string ? advData.cvss.vector_string : vectorString;
                   cve = advData.cve_id || cve;
                   
-                  // Format CWE agar rapi bersusun
                   if (advData.cwes && advData.cwes.length > 0) {
                     cweList = advData.cwes.map(c => `- **${c.cwe_id}**: ${c.name}`).join('\n');
                   }
 
-                  // Format Versi yang Terdampak dan Ditambal (Bisa multi-baris)
                   if (advData.vulnerabilities && advData.vulnerabilities.length > 0) {
                     let ranges = [];
                     let fixes = [];
                     advData.vulnerabilities.forEach(v => {
-                      // Pastikan ngambil rentang versi dari paket yang tepat
                       if (v.package && v.package.name === pkg) {
                         if (v.vulnerable_version_range) ranges.push(v.vulnerable_version_range);
                         if (v.first_patched_version) fixes.push(v.first_patched_version);
@@ -110,10 +105,8 @@ jobs:
                   console.log(`⚠️ Tarikan data Public API gagal, tetap menggunakan info dari Alert: ${e.message}`);
                 }
 
-                // Normalisasi Status Tingkat Keparahan (MEDIUM jadi MODERATE)
                 if (severity === 'MEDIUM') severity = 'MODERATE';
 
-                // CVSS Parser (Menerjemahkan Vector String ke Teks Manusiawi)
                 function parseCvssVector(vector) {
                   if (!vector || vector === 'N/A') return '*Data metrik belum dipublikasikan oleh repositori database.*';
                   const map = {
@@ -141,7 +134,7 @@ jobs:
                 const cvssMetrics = parseCvssVector(vectorString);
 
                 // ==========================================
-                // 3. RANGKAI ULANG BODY (Sesuai Permintaan Baru)
+                // 3. RANGKAI ULANG BODY
                 // ==========================================
                 const body = `🚨 **Sumber Peringatan:** [Dependabot Alert #${alertNumber}](${alertUrl})
 
@@ -181,7 +174,6 @@ jobs:
             ---
             _Auto-generated from ${botType}._`;
 
-                // Penentuan Target Label untuk Isu
                 let targetSeverityLabel = 'Low';
                 if (severity === 'CRITICAL') targetSeverityLabel = 'Critical';
                 else if (severity === 'HIGH') targetSeverityLabel = 'High';
@@ -190,39 +182,53 @@ jobs:
                 // ==========================================
                 // 4. MEMBUAT ATAU MEMPERBARUI ISSUE
                 // ==========================================
-                // Cek apakah isu dari URL alert ini sudah dibuat sebelumnya
                 const existing = issues.find(i => i.body && i.body.includes(alertUrl));
+
+                // Daftar label lengkap yang wajib ada pada Isu yang disinkronisasi
+                const defaultLabels = ['Security', 'Auto Create Issues', 'dependencies', 'Auto Sync', 'Auto Updated', 'Auto Re-Open', targetSeverityLabel];
 
                 if (!existing) {
                   const createdIssue = await github.rest.issues.create({
                     owner, repo, title, body,
-                    labels: ['Security', 'Auto Create Issues', 'dependencies', targetSeverityLabel],
+                    labels: defaultLabels,
                     assignees: ['TheKingTermux'], milestone: 1
                   });
                   console.log(`✅ Created issue #${createdIssue.data.number}: ${title}`);
                 } else {
-                  // Cek apakah isi konten berubah (Menghindari spam update kalau isi teksnya sama saja)
-                  if (existing.body !== body || existing.title !== title) {
+                  const isClosed = existing.state === 'closed';
+
+                  // Update jika teks berubah, judul berubah, atau Isu tertutup padahal Alert masih Open
+                  if (existing.body !== body || existing.title !== title || isClosed) {
                     await github.rest.issues.update({
                       owner, repo, issue_number: existing.number,
                       title: title, body: body, state: 'open', milestone: 1
                     });
-                    console.log(`🔄 Updated issue #${existing.number}: ${title} (Konten telah disinkronisasi)`);
+                    
+                    if (isClosed) {
+                      console.log(`🔓 Re-Opened issue #${existing.number}: ${title} (Alert terdeteksi masih aktif)`);
+                    } else {
+                      console.log(`🔄 Updated issue #${existing.number}: ${title} (Konten telah disinkronisasi)`);
+                    }
                   } else {
-                    console.log(`➖ Issue #${existing.number} sudah up-to-date. Tidak ada pembaruan ditarik.`);
+                    console.log(`➖ Issue #${existing.number} sudah up-to-date dan open. Tidak ada pembaruan ditarik.`);
                   }
                   
-                  // Perbaiki Label Jika Label Server Berubah (Misl: Dari Low ke Moderate)
                   const currentLabels = existing.labels.map(l => l.name);
                   const severityPool = ['Low', 'Moderate', 'High', 'Critical'];
                   const wrongSeverityLabels = currentLabels.filter(l => severityPool.includes(l) && l !== targetSeverityLabel);
 
+                  // Hapus label severity lama yang salah
                   for (const wrongLabel of wrongSeverityLabels) {
                     try { await github.rest.issues.removeLabel({ owner, repo, issue_number: existing.number, name: wrongLabel }); } catch (e) {}
                   }
 
-                  if (!currentLabels.includes(targetSeverityLabel)) {
-                    await github.rest.issues.addLabels({ owner, repo, issue_number: existing.number, labels: [targetSeverityLabel] });
+                  // Tambahkan label baru jika belum ada di isu terkait
+                  const requiredLabels = [targetSeverityLabel, 'Sync', 'Auto Updated', 'Auto Re-Open'];
+                  const labelsToAdd = requiredLabels.filter(l => !currentLabels.includes(l));
+
+                  if (labelsToAdd.length > 0) {
+                    await github.rest.issues.addLabels({ owner, repo, issue_number: existing.number, labels: labelsToAdd });
+                    console.log(`🏷️ Label baru ditambahkan: ${labelsToAdd.join(', ')}`);
                   }
                 }
               }
