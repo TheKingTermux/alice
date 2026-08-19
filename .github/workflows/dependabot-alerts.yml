@@ -223,7 +223,7 @@ jobs:
                   }
 
                   // Tambahkan label baru jika belum ada di isu terkait
-                  const requiredLabels = [targetSeverityLabel, 'Sync', 'Auto Updated', 'Auto Re-Open'];
+                  const requiredLabels = [targetSeverityLabel, 'Auto Sync', 'Auto Updated', 'Auto Re-Open'];
                   const labelsToAdd = requiredLabels.filter(l => !currentLabels.includes(l));
 
                   if (labelsToAdd.length > 0) {
