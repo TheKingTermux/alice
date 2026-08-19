@@ -10,6 +10,7 @@ on:
       - "Remove Unused Branches"
       - "Sync Security Advisories"
       - "Dependabot Auto Fixer"
+      - "Dependabot Alerts Sync to Issues"
     types:
       - completed
 
