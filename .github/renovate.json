@@ -13,6 +13,7 @@
     "Auto Updated",
     "Need Update"
   ],
+  "milestone": 1,
   "packageRules": [
     {
       "matchUpdateTypes": [
