@@ -6,25 +6,89 @@ on:
     - cron: '0 0 * * *'
   # Manual trigger
   workflow_dispatch:
-    inputs:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
 
 jobs:
   lock:
     runs-on: ubuntu-latest
     steps:
-      # 🤖 LANGKAH TAMBAHAN: Generate token khusus dari GitHub App bot pribadi Anda
       - name: Generate Bot Token
         id: bot_token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.BOT_APP_ID }}
+          client-id: ${{ secrets.BOT_APP_ID }} # Ubah ke app-id jika versi token action lama
           private-key: ${{ secrets.BOT_PRIVATE_KEY }}
 
-      - uses: dessant/lock-threads@v6
+      # 1. Kunci dan beri label Solved secara default (Bawaan Dessant)
+      - name: Lock Inactive Threads
+        uses: dessant/lock-threads@v6
         with:
-          # Ganti github.token bawaan dengan token hasil generate bot pribadi
           github-token: ${{ steps.bot_token.outputs.token }}
           issue-inactive-days: '1'
           pr-inactive-days: '1'
           add-issue-labels: 'Solved'
           add-pr-labels: 'Solved'
+
+      # 2. Skrip Sweeper: Mengoreksi Judul & Label untuk yang "Merah"
+      - name: Koreksi Tiket Merah (Unmerged PRs & Not Planned Issues)
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ steps.bot_token.outputs.token }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const labelLawan = 'Unresolved'; // 💡 Lawan kata dari Solved. Bisa lu ganti ke 'Abandoned' atau 'Cancelled'
+            
+            console.log("🔍 Mengecek tiket yang ditutup dengan label 'Solved'...");
+            
+            // Mencari tiket yang sudah ditutup dan memiliki label 'Solved'
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'closed', labels: 'Solved', per_page: 100
+            });
+            
+            for (const issue of issues) {
+              const isPR = !!issue.pull_request;
+              let isMerah = false; // "Merah" berarti ditutup tanpa penyelesaian
+              
+              if (isPR) {
+                // Cek status PR: Apakah merged?
+                const pr = await github.rest.pulls.get({ owner, repo, pull_number: issue.number });
+                if (!pr.data.merged) isMerah = true; // PR ditolak/ditutup tanpa di-merge
+              } else {
+                // Cek status Issue: Apakah ditutup sebagai 'not_planned' (Tidak direncanakan / Ditolak)
+                if (issue.state_reason === 'not_planned') isMerah = true; 
+              }
+              
+              // Jika statusnya Merah, lakukan koreksi!
+              if (isMerah) {
+                console.log(`\n⚠️ Mengoreksi tiket tidak terselesaikan: #${issue.number}`);
+                
+                let newTitle = issue.title;
+                if (!newTitle.endsWith(' - autoclosed')) {
+                  newTitle = `${newTitle} - autoclosed`;
+                }
+                
+                // 1. Cabut label Solved
+                try { 
+                  await github.rest.issues.removeLabel({ owner, repo, issue_number: issue.number, name: 'Solved' }); 
+                  console.log(`🗑️ Label 'Solved' dihapus.`);
+                } catch(e) {}
+                
+                // 2. Pasang label Unresolved
+                const currentLabels = issue.labels.map(l => l.name);
+                if (!currentLabels.includes(labelLawan)) {
+                  await github.rest.issues.addLabels({ owner, repo, issue_number: issue.number, labels: [labelLawan] });
+                  console.log(`🏷️ Label '${labelLawan}' ditambahkan.`);
+                }
+                
+                // 3. Ubah Judul
+                if (newTitle !== issue.title) {
+                  await github.rest.issues.update({ owner, repo, issue_number: issue.number, title: newTitle });
+                  console.log(`📝 Judul diubah menjadi: "${newTitle}"`);
+                }
+              }
+            }
