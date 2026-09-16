@@ -19,7 +19,7 @@
     "chalk": "^6.0.0",
     "cheerio": "^1.2.0",
     "dotenv": "^17.2.3",
-    "emoji-regex": "^10.6.0",
+    "emoji-regex": "^11.0.0",
     "emoji-strip": "^1.0.1",
     "emoji-unicode": "^2.0.2",
     "ffmpeg": "1.1.3",
