@@ -18,7 +18,7 @@
     "brainly-scraper": "^1.0.3",
     "chalk": "^6.0.0",
     "cheerio": "^1.2.0",
-    "dotenv": "^17.2.3",
+    "dotenv": "^18.0.0",
     "emoji-regex": "^11.0.0",
     "emoji-strip": "^1.0.1",
     "emoji-unicode": "^2.0.2",
