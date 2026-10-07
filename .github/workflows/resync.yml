@@ -39,7 +39,6 @@ jobs:
               });
             } catch (e) {}
 
-            // 1. Fungsi pembantu hide komentar usang (Ditaruh di atas agar bisa dipanggil kapanpun)
             async function hideOldComments(issueNum, currentCommentId) {
               try {
                 const comments = await github.paginate(github.rest.issues.listComments, {
@@ -51,7 +50,6 @@ jobs:
                   const isOldErrorBot = comment.body.includes('❌ **Resync Gagal:**');
                   
                   if (comment.id !== currentCommentId && (isOldResync || isOldErrorBot)) {
-                    console.log(`🧹 Menyembunyikan komentar usang ID: ${comment.id}`);
                     await github.graphql(`
                       mutation($input: MinimizeCommentInput!) {
                         minimizeComment(input: $input) {
@@ -63,9 +61,7 @@ jobs:
                     });
                   }
                 }
-              } catch (err) {
-                console.log(`⚠️ Gagal menyembunyikan komentar lama: ${err.message}`);
-              }
+              } catch (err) {}
             }
 
             const issueRes = await github.rest.issues.get({ owner, repo, issue_number: issueNumber });
@@ -73,7 +69,6 @@ jobs:
             const oldBody = issue.body || '';
             const currentLabels = issue.labels.map(l => l.name);
 
-            // 2. Ekstrak GHSA ID atau Fallback ke CVE ID
             const ghsaMatch = oldBody.match(/\*\*GHSA ID:\*\*\s*(GHSA-[A-Z0-9-]+)/i);
             let ghsa = ghsaMatch ? ghsaMatch[1].toUpperCase() : null;
             
@@ -81,25 +76,19 @@ jobs:
             let cveFallback = cveMatch ? cveMatch[1].toUpperCase() : null;
 
             if (!ghsa && (!cveFallback || cveFallback === 'NO CVE')) {
-              console.log(`❌ Tiket #${issueNumber} tidak memiliki ID valid.`);
-              
               await hideOldComments(issueNumber, commentId);
-
               try {
                 await github.rest.reactions.createForIssueComment({
                   owner, repo, comment_id: commentId, content: '-1'
                 });
                 await github.rest.issues.createComment({
                   owner, repo, issue_number: issueNumber,
-                  body: `❌ **Resync Gagal:** Tidak ditemukan GHSA ID atau CVE ID yang valid di dalam teks tiket ini.`
+                  body: '❌ **Resync Gagal:** Tidak ditemukan GHSA ID atau CVE ID yang valid di dalam teks tiket ini.'
                 });
               } catch (e) {}
               return;
             }
 
-            console.log(`🔍 Target Identifikasi -> GHSA: ${ghsa \vert{}\vert{} 'Tidak ada'}, CVE:${cveFallback || 'Tidak ada'}`);
-
-            // 3. Deteksi Sumber
             let sourceUrl = '';
             let sourceNumber = '';
             let sourceType = issue.pull_request ? 'PR' : 'Alert';
@@ -130,27 +119,22 @@ jobs:
             let cweList = 'N/A';
             let vulnRange = 'Unknown';
             let patched = 'None';
-            let advisoryUrl = ghsa ? `https://github.com/advisories/${ghsa}` : `https://nvd.nist.gov/vuln/detail/${cve}`;
+            let advisoryUrl = ghsa ? 'https://github.com/advisories/' + ghsa : 'https://nvd.nist.gov/vuln/detail/' + cve;
 
-            // 4. Tarik Data dengan Sistem Fallback Berlapis
             let advData = null;
 
             try {
               if (ghsa) {
                 const advResponse = await github.request('GET /advisories/{ghsa_id}', { ghsa_id: ghsa });
                 advData = advResponse.data;
-                console.log(`✅ Data ditarik via GHSA dari Global Advisory Database.`);
               } else if (cveFallback && cveFallback !== 'NO CVE') {
                 const searchRes = await github.request('GET /advisories', { cve_id: cveFallback });
                 if (searchRes.data && searchRes.data.length > 0) {
                   advData = searchRes.data[0];
                   ghsa = advData.ghsa_id;
-                  console.log(`✅ Data ditemukan via pencarian CVE ID di Global Advisory Database.`);
                 }
               }
-            } catch (e) {
-              console.log(`⚠️ Global API gagal (${e.message}). Mencoba jalur Fallback internal...`);
-            }
+            } catch (e) {}
 
             if (!advData && sourceType === 'Alert' && sourceNumber) {
               try {
@@ -160,31 +144,23 @@ jobs:
                 advData = alertResponse.data.security_advisory;
                 if (advData.html_url) advisoryUrl = advData.html_url;
                 if (advData.ghsa_id) ghsa = advData.ghsa_id.toUpperCase();
-                console.log(`✅ Data berhasil ditarik dari Internal Dependabot Alert.`);
-              } catch (err2) {
-                console.log(`❌ Fallback internal gagal: ${err2.message}`);
-              }
+              } catch (err2) {}
             }
 
-            // JIKA GAGAL: Sembunyikan komen lama dan beri reaksi silang (-1)
             if (!advData) {
-              console.log(`❌ Metadata tidak ditemukan untuk tiket #${issueNumber}.`);
-              
               await hideOldComments(issueNumber, commentId);
-
               try {
                 await github.rest.reactions.createForIssueComment({
                   owner, repo, comment_id: commentId, content: '-1'
                 });
                 await github.rest.issues.createComment({
                   owner, repo, issue_number: issueNumber,
-                  body: `❌ **Resync Gagal:** Metadata untuk \`${ghsa || cveFallback || 'Tiket ini'}\` tidak dapat ditemukan di Global maupun Internal Database.`
+                  body: '❌ **Resync Gagal:** Metadata tidak dapat ditemukan di Global maupun Internal Database.'
                 });
               } catch (e) {}
               return;
             }
 
-            // Timpa Data
             title = advData.summary || title;
             descText = advData.description || descText;
             severity = advData.severity ? advData.severity.toUpperCase() : severity;
@@ -194,7 +170,7 @@ jobs:
             if (advData.html_url) advisoryUrl = advData.html_url;
 
             if (advData.cwes && advData.cwes.length > 0) {
-              cweList = advData.cwes.map(c => `- **${c.cwe_id}**: ${c.name}`).join('\n');
+              cweList = advData.cwes.map(c => `- **` + c.cwe_id + `**: ` + c.name).join('\n');
             }
 
             if (advData.vulnerabilities && advData.vulnerabilities.length > 0) {
@@ -215,50 +191,42 @@ jobs:
               if (!vector || vector === 'N/A') return '*Data metrik belum dipublikasikan oleh repositori database.*';
               const map = { 'AV:N':'Network', 'AV:A':'Adjacent', 'AV:L':'Local', 'AV:P':'Physical', 'AC:L':'Low', 'AC:H':'High', 'PR:N':'None', 'PR:L':'Low', 'PR:H':'High', 'UI:N':'None', 'UI:R':'Required', 'S:U':'Unchanged', 'S:C':'Changed', 'C:N':'None', 'C:L':'Low', 'C:H':'High', 'I:N':'None', 'I:L':'Low', 'I:H':'High', 'A:N':'None', 'A:L':'Low', 'A:H':'High' };
               const parts = vector.replace(/^CVSS:3\.[01]\//, '').split('/');
-              let result = `**Vector:** \`${vector}\`\n`;
-              parts.forEach(p => { const [k, v] = p.split(':'); if (map[`${k}:${v}`]) { const name = k==='AV'?'Attack vector':k==='AC'?'Attack complexity':k==='PR'?'Privileges required':k==='UI'?'User interaction':k==='S'?'Scope':k==='C'?'Confidentiality':k==='I'?'Integrity':k==='A'?'Availability':k; result += `- **${name}:** ${map[`${k}:${v}`]}\n`; } });
+              let result = '**Vector:** `' + vector + '`\n';
+              parts.forEach(p => { 
+                const [k, v] = p.split(':'); 
+                if (map[k + ':' + v]) { 
+                  const name = k==='AV'?'Attack vector':k==='AC'?'Attack complexity':k==='PR'?'Privileges required':k==='UI'?'User interaction':k==='S'?'Scope':k==='C'?'Confidentiality':k==='I'?'Integrity':k==='A'?'Availability':k; 
+                  result += '- **' + name + ':** ' + map[k + ':' + v] + '\n'; 
+                } 
+              });
               return result;
             }
             const cvssMetrics = parseCvssVector(vectorString);
 
-            let newBody = `🚨 **Sumber Peringatan:** [Dependabot Alert #${sourceNumber || issueNumber}](${sourceUrl})
-
-            ### Description
-            ${descText}
-            
-            ### Severity Check
-            - [${severity === 'LOW' ? 'x' : ' '}] Low
-            - [${severity === 'MODERATE' ? 'x' : ' '}] Moderate
-            - [${severity === 'HIGH' ? 'x' : ' '}] High
-            - [${severity === 'CRITICAL' ? 'x' : ' '}] Critical
-            
-            ### Severity Score
-            ${cvss} / 10
-
-            ### CVSS v3 Base Metrics
-            ${cvssMetrics}
-            
-            ### Identifiers
-            - **GHSA ID:** ${ghsa || 'N/A'}
-            - **CVE ID:** ${cve}
-            - **Alt ID (OSV/Snyk):** ${osvId}
-            
-            ### Weaknesses
-            ${cweList !== 'N/A' ? cweList : '- N/A'}
-            
-            ### Affected
-            - **Package:** \`${pkg}\`
-            - **Affected versions:**
-              - ${vulnRange}
-            - **Patched versions:**
-              - ${patched}
-            
-            ### References
-            - Advisory: ${advisoryUrl}
-            - Alert Link: ${sourceUrl}
-            
-            ---
-            _Auto-generated from command /resync._`;
+            // Menggunakan penggabungan string biasa untuk menghindari konflik template literal JS
+            let newBody = '🚨 **Sumber Peringatan:** [Dependabot Alert #' + (sourceNumber || issueNumber) + '](' + sourceUrl + ')\n\n' +
+              '### Description\n' + descText + '\n\n' +
+              '### Severity Check\n' +
+              '- [' + (severity === 'LOW' ? 'x' : ' ') + '] Low\n' +
+              '- [' + (severity === 'MODERATE' ? 'x' : ' ') + '] Moderate\n' +
+              '- [' + (severity === 'HIGH' ? 'x' : ' ') + '] High\n' +
+              '- [' + (severity === 'CRITICAL' ? 'x' : ' ') + '] Critical\n\n' +
+              '### Severity Score\n' + cvss + ' / 10\n\n' +
+              '### CVSS v3 Base Metrics\n' + cvssMetrics + '\n\n' +
+              '### Identifiers\n' +
+              '- **GHSA ID:** ' + (ghsa || 'N/A') + '\n' +
+              '- **CVE ID:** ' + cve + '\n' +
+              '- **Alt ID (OSV/Snyk):** ' + osvId + '\n\n' +
+              '### Weaknesses\n' + (cweList !== 'N/A' ? cweList : '- N/A') + '\n\n' +
+              '### Affected\n' +
+              '- **Package:** `' + pkg + '`\n' +
+              '- **Affected versions:**\n  - ' + vulnRange + '\n' +
+              '- **Patched versions:**\n  - ' + patched + '\n\n' +
+              '### References\n' +
+              '- Advisory: ' + advisoryUrl + '\n' +
+              '- Alert Link: ' + sourceUrl + '\n\n' +
+              '---\n' +
+              '_Auto-generated from command /resync._';
 
             await github.rest.issues.update({
               owner, repo, issue_number: issueNumber, title: title, body: newBody
@@ -280,7 +248,6 @@ jobs:
               await github.rest.issues.addLabels({ owner, repo, issue_number: issueNumber, labels: labelsToPush });
             }
 
-            // JIKA BERHASIL: Sembunyikan komen lama dan beri reaksi roket (🚀)
             await hideOldComments(issueNumber, commentId);
 
             try {
@@ -289,7 +256,7 @@ jobs:
               });
               await github.rest.issues.createComment({
                 owner, repo, issue_number: issueNumber,
-                body: `✨ **Resync Berhasil!** Tiket ini telah diperbarui menggunakan pengenal yang tersedia.`
+                body: '✨ **Resync Berhasil!** Tiket ini telah diperbarui menggunakan pengenal yang tersedia.'
               });
             } catch (e) {}
 
