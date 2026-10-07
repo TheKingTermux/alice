@@ -39,7 +39,7 @@ jobs:
               });
             } catch (e) {}
 
-            // Fungsi pembantu hide komentar usang
+            // 1. Fungsi pembantu hide komentar usang (Ditaruh di atas agar bisa dipanggil kapanpun)
             async function hideOldComments(issueNum, currentCommentId) {
               try {
                 const comments = await github.paginate(github.rest.issues.listComments, {
@@ -48,9 +48,10 @@ jobs:
 
                 for (const comment of comments) {
                   const isOldResync = comment.body.trim() === '/resync' || comment.body.trim() === '/resync ';
-                  const isOldErrorBot = comment.body.includes('❌ **Gagal Resync:**');
+                  const isOldErrorBot = comment.body.includes('❌ **Resync Gagal:**');
                   
                   if (comment.id !== currentCommentId && (isOldResync || isOldErrorBot)) {
+                    console.log(`🧹 Menyembunyikan komentar usang ID: ${comment.id}`);
                     await github.graphql(`
                       mutation($input: MinimizeCommentInput!) {
                         minimizeComment(input: $input) {
@@ -62,7 +63,9 @@ jobs:
                     });
                   }
                 }
-              } catch (err) {}
+              } catch (err) {
+                console.log(`⚠️ Gagal menyembunyikan komentar lama: ${err.message}`);
+              }
             }
 
             const issueRes = await github.rest.issues.get({ owner, repo, issue_number: issueNumber });
@@ -70,7 +73,7 @@ jobs:
             const oldBody = issue.body || '';
             const currentLabels = issue.labels.map(l => l.name);
 
-            // 1. Ekstrak GHSA ID atau Fallback ke CVE ID
+            // 2. Ekstrak GHSA ID atau Fallback ke CVE ID
             const ghsaMatch = oldBody.match(/\*\*GHSA ID:\*\*\s*(GHSA-[A-Z0-9-]+)/i);
             let ghsa = ghsaMatch ? ghsaMatch[1].toUpperCase() : null;
             
@@ -78,17 +81,25 @@ jobs:
             let cveFallback = cveMatch ? cveMatch[1].toUpperCase() : null;
 
             if (!ghsa && (!cveFallback || cveFallback === 'NO CVE')) {
-              console.log(`❌ Tiket #${issueNumber} tidak memiliki GHSA ID maupun CVE ID yang valid.`);
-              await github.rest.issues.createComment({
-                owner, repo, issue_number: issueNumber,
-                body: `❌ **Gagal Resync:** Tidak ditemukan GHSA ID atau CVE ID yang valid di dalam teks tiket ini.`
-              });
+              console.log(`❌ Tiket #${issueNumber} tidak memiliki ID valid.`);
+              
+              await hideOldComments(issueNumber, commentId);
+
+              try {
+                await github.rest.reactions.createForIssueComment({
+                  owner, repo, comment_id: commentId, content: '-1'
+                });
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: issueNumber,
+                  body: `❌ **Resync Gagal:** Tidak ditemukan GHSA ID atau CVE ID yang valid di dalam teks tiket ini.`
+                });
+              } catch (e) {}
               return;
             }
 
             console.log(`🔍 Target Identifikasi -> GHSA: ${ghsa \vert{}\vert{} 'Tidak ada'}, CVE:${cveFallback || 'Tidak ada'}`);
 
-            // 2. Deteksi Sumber
+            // 3. Deteksi Sumber
             let sourceUrl = '';
             let sourceNumber = '';
             let sourceType = issue.pull_request ? 'PR' : 'Alert';
@@ -121,7 +132,7 @@ jobs:
             let patched = 'None';
             let advisoryUrl = ghsa ? `https://github.com/advisories/${ghsa}` : `https://nvd.nist.gov/vuln/detail/${cve}`;
 
-            // 3. Tarik Data dengan Sistem Fallback Berlapis (GHSA -> CVE -> Internal Alert)
+            // 4. Tarik Data dengan Sistem Fallback Berlapis
             let advData = null;
 
             try {
@@ -130,7 +141,6 @@ jobs:
                 advData = advResponse.data;
                 console.log(`✅ Data ditarik via GHSA dari Global Advisory Database.`);
               } else if (cveFallback && cveFallback !== 'NO CVE') {
-                // Coba cari via endpoint query CVE jika GHSA kosong
                 const searchRes = await github.request('GET /advisories', { cve_id: cveFallback });
                 if (searchRes.data && searchRes.data.length > 0) {
                   advData = searchRes.data[0];
@@ -142,7 +152,6 @@ jobs:
               console.log(`⚠️ Global API gagal (${e.message}). Mencoba jalur Fallback internal...`);
             }
 
-            // Jika global tetap gagal, coba ambil dari Dependabot Alert internal
             if (!advData && sourceType === 'Alert' && sourceNumber) {
               try {
                 const alertResponse = await github.request('GET /repos/{owner}/{repo}/dependabot/alerts/{alert_number}', {
@@ -157,12 +166,15 @@ jobs:
               }
             }
 
+            // JIKA GAGAL: Sembunyikan komen lama dan beri reaksi silang (-1)
             if (!advData) {
               console.log(`❌ Metadata tidak ditemukan untuk tiket #${issueNumber}.`);
+              
+              await hideOldComments(issueNumber, commentId);
+
               try {
-                // Ubah reaksi jadi silang jika gagal
                 await github.rest.reactions.createForIssueComment({
-                  owner, repo, comment_id: commentId, content: '-1' // Atau gunakan emoji silang/thumbsdown yang didukung GitHub API ('confused', '-1')
+                  owner, repo, comment_id: commentId, content: '-1'
                 });
                 await github.rest.issues.createComment({
                   owner, repo, issue_number: issueNumber,
@@ -268,6 +280,9 @@ jobs:
               await github.rest.issues.addLabels({ owner, repo, issue_number: issueNumber, labels: labelsToPush });
             }
 
+            // JIKA BERHASIL: Sembunyikan komen lama dan beri reaksi roket (🚀)
+            await hideOldComments(issueNumber, commentId);
+
             try {
               await github.rest.reactions.createForIssueComment({
                 owner, repo, comment_id: commentId, content: 'rocket'
@@ -279,42 +294,3 @@ jobs:
             } catch (e) {}
 
             console.log(`✅ Sukses melakukan resync manual pada tiket #${issueNumber}!`);
-
-            // Fungsi pembantu untuk menyembunyikan komentar lama (autohide outdated)
-            async function hideOldComments(issueNum, currentCommentId) {
-              try {
-                // Ambil daftar semua komentar di Isu/PR tersebut
-                const comments = await github.paginate(github.rest.issues.listComments, {
-                  owner, repo, issue_number: issueNum, per_page: 100
-                });
-
-                for (const comment of comments) {
-                  // Jika komentar tersebut adalah perintah /resync lama atau balasan error dari bot sebelumnya
-                  const isOldResync = comment.body.trim() === '/resync' || comment.body.trim() === '/resync ';
-                  const isOldErrorBot = comment.body.includes('❌ **Resync Gagal:**');
-                  
-                  // Jangan sembunyikan komentar yang sedang diproses saat ini
-                  if (comment.id !== currentCommentId && (isOldResync || isOldErrorBot)) {
-                    console.log(`🧹 Menyembunyikan komentar usang ID: ${comment.id}`);
-                    
-                    // Gunakan GitHub GraphQL API untuk minimize/hide komentar
-                    await github.graphql(`
-                      mutation($input: MinimizeCommentInput!) {
-                        minimizeComment(input: $input) {
-                          minimizedComment {
-                            isMinimized
-                          }
-                        }
-                      }
-                    `, {
-                      input: {
-                        subjectId: comment.node_id,
-                        classifier: 'OUTDATED'
-                      }
-                    });
-                  }
-                }
-              } catch (err) {
-                console.log(`⚠️ Gagal menyembunyikan komentar lama: ${err.message}`);
-              }
-            }
