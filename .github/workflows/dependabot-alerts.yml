@@ -50,40 +50,68 @@ jobs:
                 const alertNumber = alert.number;
                 const alertUrl = alert.html_url; 
                 const pkg = alert.dependency.package.name;
-                const ghsa = alert.security_advisory.ghsa_id.toUpperCase();
                 
-                console.log(`\n⏳ Memproses Alert #${alertNumber} - ${pkg} (${ghsa})...`);
+                // Ambil GHSA atau fallback ke CVE dari objek alert
+                const advisoryObj = alert.security_advisory || {};
+                let ghsa = advisoryObj.ghsa_id ? advisoryObj.ghsa_id.toUpperCase() : null;
+                let cve = advisoryObj.cve_id ? advisoryObj.cve_id.toUpperCase() : 'No CVE';
+
+                console.log(`\n⏳ Memproses Alert #${alertNumber} - ${pkg} (GHSA: ${ghsa || 'N/A'}, CVE: ${cve})...`);
 
                 // 1. Set Nilai Awal dari Bawaan Alert
-                let title = alert.security_advisory.summary || `Security Advisory: ${pkg}`;
-                let descText = alert.security_advisory.description || 'No description available.';
-                let severity = alert.security_advisory.severity ? alert.security_advisory.severity.toUpperCase() : 'UNKNOWN';
+                let title = advisoryObj.summary || `Security Advisory: ${pkg}`;
+                let descText = advisoryObj.description || 'No description available.';
+                let severity = advisoryObj.severity ? advisoryObj.severity.toUpperCase() : 'UNKNOWN';
                 let cvss = 'N/A';
                 let vectorString = 'N/A';
-                let cve = alert.security_advisory.cve_id || 'No CVE';
                 let osvId = 'No Alt ID';
                 let cweList = 'N/A';
                 let vulnRange = 'Unknown';
                 let patched = 'None';
+                let advisoryLink = ghsa ? `https://github.com/advisories/${ghsa}` : (cve !== 'No CVE' ? `https://nvd.nist.gov/vuln/detail/${cve}` : alertUrl);
 
                 // ==========================================
-                // 2. FETCH KE API GITHUB ADVISORY
+                // 2. FETCH KE API GITHUB ADVISORY (DENGAN FALLBACK GHSA -> CVE)
                 // ==========================================
+                let advFetched = false;
                 try {
-                  console.log(`🔍 Menarik metadata resmi untuk ${ghsa}...`);
-                  
-                  const advResponse = await github.request('GET /advisories/{ghsa_id}', {
-                    ghsa_id: ghsa
-                  });
-                  const advData = advResponse.data;
-                  
+                  if (ghsa) {
+                    console.log(`🔍 Menarik metadata resmi via GHSA: ${ghsa}...`);
+                    const advResponse = await github.request('GET /advisories/{ghsa_id}', { ghsa_id: ghsa });
+                    applyAdvData(advResponse.data);
+                    advFetched = true;
+                  }
+                } catch (e) {
+                  console.log(`⚠️ Global API gagal via GHSA (${e.message}). Mencoba fallback via CVE...`);
+                }
+
+                // Jika GHSA gagal atau kosong, coba cari via CVE ID di Global Database
+                if (!advFetched && cve !== 'No CVE') {
+                  try {
+                    console.log(`🔍 Mencari metadata via CVE ID: ${cve}...`);
+                    const searchRes = await github.request('GET /advisories', { cve_id: cve });
+                    if (searchRes.data && searchRes.data.length > 0) {
+                      const data = searchRes.data[0];
+                      if (data.ghsa_id) ghsa = data.ghsa_id.toUpperCase();
+                      applyAdvData(data);
+                      advFetched = true;
+                      console.log(`✅ Data ditemukan via pencarian CVE ID!`);
+                    }
+                  } catch (err2) {
+                    console.log(`⚠️ Pencarian via CVE juga gagal: ${err2.message}`);
+                  }
+                }
+
+                // Helper untuk menerapkan data dari API
+                function applyAdvData(advData) {
                   title = advData.summary || title;
                   descText = advData.description || descText;
                   severity = advData.severity ? advData.severity.toUpperCase() : severity;
                   cvss = advData.cvss && advData.cvss.score ? advData.cvss.score.toString() : cvss;
                   vectorString = advData.cvss && advData.cvss.vector_string ? advData.cvss.vector_string : vectorString;
                   cve = advData.cve_id || cve;
-                  
+                  if (advData.html_url) advisoryLink = advData.html_url;
+
                   if (advData.cwes && advData.cwes.length > 0) {
                     cweList = advData.cwes.map(c => `- **${c.cwe_id}**: ${c.name}`).join('\n');
                   }
@@ -100,9 +128,6 @@ jobs:
                     if (ranges.length > 0) vulnRange = ranges.join('\n  - ');
                     if (fixes.length > 0) patched = fixes.join('\n  - ');
                   }
-                  console.log(`✅ Data Public API berhasil didapatkan dan ditimpa!`);
-                } catch (e) {
-                  console.log(`⚠️ Tarikan data Public API gagal, tetap menggunakan info dari Alert: ${e.message}`);
                 }
 
                 if (severity === 'MEDIUM') severity = 'MODERATE';
@@ -138,41 +163,41 @@ jobs:
                 // ==========================================
                 const body = `🚨 **Sumber Peringatan:** [Dependabot Alert #${alertNumber}](${alertUrl})
 
-            ### Description
-            ${descText}
-            
-            ### Severity Check
-            - [${severity === 'LOW' ? 'x' : ' '}] Low
-            - [${severity === 'MODERATE' ? 'x' : ' '}] Moderate
-            - [${severity === 'HIGH' ? 'x' : ' '}] High
-            - [${severity === 'CRITICAL' ? 'x' : ' '}] Critical
-            
-            ### Severity Score
-            ${cvss} / 10
+                ### Description
+                ${descText}
+                
+                ### Severity Check
+                - [${severity === 'LOW' ? 'x' : ' '}] Low
+                - [${severity === 'MODERATE' ? 'x' : ' '}] Moderate
+                - [${severity === 'HIGH' ? 'x' : ' '}] High
+                - [${severity === 'CRITICAL' ? 'x' : ' '}] Critical
+                
+                ### Severity Score
+                ${cvss} / 10
 
-            ### CVSS v3 Base Metrics
-            ${cvssMetrics}
-            
-            ### Identifiers
-            - **GHSA ID:** ${ghsa}
-            - **CVE ID:** ${cve}
-            - **Alt ID (OSV/Snyk):** ${osvId}
-            
-            ### Weaknesses
-            ${cweList !== 'N/A' ? cweList : '- N/A'}
-            
-            ### Affected
-            - **Package:** \`${pkg}\`
-            - **Affected versions:**
-              - ${vulnRange}
-            - **Patched versions:**
-              - ${patched}
-            
-            ### References
-            - Advisory: https://github.com/advisories/${ghsa}
-            
-            ---
-            _Auto-generated from ${botType}._`;
+                ### CVSS v3 Base Metrics
+                ${cvssMetrics}
+                
+                ### Identifiers
+                - **GHSA ID:** ${ghsa || 'N/A'}
+                - **CVE ID:** ${cve}
+                - **Alt ID (OSV/Snyk):** ${osvId}
+                
+                ### Weaknesses
+                ${cweList !== 'N/A' ? cweList : '- N/A'}
+                
+                ### Affected
+                - **Package:** \`${pkg}\`
+                - **Affected versions:**
+                  - ${vulnRange}
+                - **Patched versions:**
+                  - ${patched}
+                
+                ### References
+                - Advisory: ${advisoryLink}
+                
+                ---
+                _Auto-generated from ${botType}._`;
 
                 let targetSeverityLabel = 'Low';
                 if (severity === 'CRITICAL') targetSeverityLabel = 'Critical';
@@ -184,7 +209,6 @@ jobs:
                 // ==========================================
                 const existing = issues.find(i => i.body && i.body.includes(alertUrl));
 
-                // Daftar label lengkap yang wajib ada pada Isu yang disinkronisasi
                 const defaultLabels = ['Security', 'Auto Create Issues', 'dependencies', 'Auto Sync', 'Auto Updated', 'Auto Re-Open', targetSeverityLabel];
 
                 if (!existing) {
@@ -197,7 +221,6 @@ jobs:
                 } else {
                   const isClosed = existing.state === 'closed';
 
-                  // Update jika teks berubah, judul berubah, atau Isu tertutup padahal Alert masih Open
                   if (existing.body !== body || existing.title !== title || isClosed) {
                     await github.rest.issues.update({
                       owner, repo, issue_number: existing.number,
@@ -217,20 +240,16 @@ jobs:
                   const severityPool = ['Low', 'Moderate', 'High', 'Critical'];
                   const wrongSeverityLabels = currentLabels.filter(l => severityPool.includes(l) && l !== targetSeverityLabel);
 
-                  // Hapus label severity lama yang salah
                   for (const wrongLabel of wrongSeverityLabels) {
                     try { await github.rest.issues.removeLabel({ owner, repo, issue_number: existing.number, name: wrongLabel }); } catch (e) {}
                   }
 
-                  // Hapus label 'Sync' lama jika masih menempel
                   if (currentLabels.includes('Sync')) {
                     try { 
                       await github.rest.issues.removeLabel({ owner, repo, issue_number: existing.number, name: 'Sync' }); 
-                      console.log(`🗑️ Menghapus label usang: 'Sync' dari Isu #${existing.number}`);
                     } catch (e) {}
                   }
 
-                  // Tambahkan label baru jika belum ada di isu terkait
                   const requiredLabels = [targetSeverityLabel, 'Auto Sync', 'Auto Updated', 'Auto Re-Open'];
                   const labelsToAdd = requiredLabels.filter(l => !currentLabels.includes(l));
 
