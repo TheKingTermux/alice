@@ -132,10 +132,17 @@ jobs:
             }
 
             if (!advData) {
-              await github.rest.issues.createComment({
-                owner, repo, issue_number: issueNumber,
-                body: `❌ **Gagal Resync:** Metadata untuk \`${ghsa || cveFallback}\` tidak dapat ditemukan.`
-              });
+              console.log(`❌ Metadata tidak ditemukan untuk tiket #${issueNumber}.`);
+              try {
+                // Ubah reaksi jadi silang jika gagal
+                await github.rest.reactions.createForIssueComment({
+                  owner, repo, comment_id: commentId, content: '-1' // Atau gunakan emoji silang/thumbsdown yang didukung GitHub API ('confused', '-1')
+                });
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: issueNumber,
+                  body: `❌ **Resync Gagal:** Metadata untuk \`${ghsa || cveFallback || 'Tiket ini'}\` tidak dapat ditemukan di Global maupun Internal Database.`
+                });
+              } catch (e) {}
               return;
             }
 
