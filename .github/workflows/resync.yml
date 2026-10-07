@@ -89,20 +89,26 @@ jobs:
               return;
             }
 
+            // 2. Deteksi Sumber & Ambil URL Asli dari Body Lama jika Ada
             let sourceUrl = '';
             let sourceNumber = '';
             let sourceType = issue.pull_request ? 'PR' : 'Alert';
             
-            if (!issue.pull_request) {
-              const alertMatch = oldBody.match(/\[Dependabot Alert #(\d+)\]\((https:\/\/[^\s\)]+)\)/i);
+            const alertUrlMatch = oldBody.match(/\[Dependabot Alert #(\d+)\]\((https:\/\/[^\s\)]+)\)/i) || oldBody.match(/Alert Link:\s*(https:\/\/[^\s]+)/i);
+            if (alertUrlMatch) {
+              sourceNumber = alertUrlMatch[1] || issueNumber.toString();
+              sourceUrl = alertUrlMatch[2] || alertUrlMatch[1];
+              sourceType = 'Alert';
+            } else if (!issue.pull_request) {
+              const alertMatch = oldBody.match(/Alert Link:\s*(https:\/\/[^\s]+)/i);
               if (alertMatch) {
-                sourceNumber = alertMatch[1];
-                sourceUrl = alertMatch[2];
+                sourceUrl = alertMatch[1];
               }
-            } else {
-              sourceNumber = issueNumber.toString();
+            }
+
+            if (!sourceUrl) {
               sourceUrl = issue.html_url;
-              sourceType = 'PR';
+              sourceNumber = issueNumber.toString();
             }
 
             const pkgMatch = oldBody.match(/\*\*Package:\*\*\s*`?([^\n`]+)`?/i) || [];
@@ -117,8 +123,8 @@ jobs:
             let vectorString = 'N/A';
             let cve = cveFallback || 'No CVE';
             let cweList = 'N/A';
-            let vulnRange = 'Unknown';
-            let patched = 'None';
+            let vulnRangeList = [];
+            let patchedList = [];
             let advisoryUrl = ghsa ? 'https://github.com/advisories/' + ghsa : 'https://nvd.nist.gov/vuln/detail/' + cve;
 
             let advData = null;
@@ -174,16 +180,17 @@ jobs:
             }
 
             if (advData.vulnerabilities && advData.vulnerabilities.length > 0) {
-              let ranges = []; let fixes = [];
               advData.vulnerabilities.forEach(v => {
                 if (v.package && v.package.name === pkg) {
-                  if (v.vulnerable_version_range) ranges.push(v.vulnerable_version_range);
-                  if (v.first_patched_version) fixes.push(v.first_patched_version);
+                  if (v.vulnerable_version_range) vulnRangeList.push('`' + v.vulnerable_version_range + '`');
+                  if (v.first_patched_version) patchedList.push('`' + v.first_patched_version + '`');
                 }
               });
-              if (ranges.length > 0) vulnRange = ranges.join('\n  - ');
-              if (fixes.length > 0) patched = fixes.join('\n  - ');
             }
+
+            // Fallback jika array kosong
+            const vulnRangeFormatted = vulnRangeList.length > 0 ? vulnRangeList.map(r => '- ' + r).join('\n  ') : '- `Unknown`';
+            const patchedFormatted = patchedList.length > 0 ? patchedList.map(p => '- ' + p).join('\n  ') : '- `None`';
 
             if (severity === 'MEDIUM') severity = 'MODERATE';
 
@@ -203,7 +210,6 @@ jobs:
             }
             const cvssMetrics = parseCvssVector(vectorString);
 
-            // Menggunakan penggabungan string biasa untuk menghindari konflik template literal JS
             let newBody = '🚨 **Sumber Peringatan:** [Dependabot Alert #' + (sourceNumber || issueNumber) + '](' + sourceUrl + ')\n\n' +
               '### Description\n' + descText + '\n\n' +
               '### Severity Check\n' +
@@ -220,8 +226,8 @@ jobs:
               '### Weaknesses\n' + (cweList !== 'N/A' ? cweList : '- N/A') + '\n\n' +
               '### Affected\n' +
               '- **Package:** `' + pkg + '`\n' +
-              '- **Affected versions:**\n  - ' + vulnRange + '\n' +
-              '- **Patched versions:**\n  - ' + patched + '\n\n' +
+              '- **Affected versions:**\n  ' + vulnRangeFormatted + '\n' +
+              '- **Patched versions:**\n  ' + patchedFormatted + '\n\n' +
               '### References\n' +
               '- Advisory: ' + advisoryUrl + '\n' +
               '- Alert Link: ' + sourceUrl + '\n\n' +
