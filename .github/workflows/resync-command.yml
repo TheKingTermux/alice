@@ -1,0 +1,240 @@
+name: On-Demand Resync Command
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  resync-single-ticket:
+    # Hanya berjalan jika komentar persis berisi "/resync" (tidak peduli huruf besar/kecil)
+    if: github.event.comment.body == '/resync' || github.event.comment.body == '/resync '
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate Bot Token
+        id: bot_token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+
+      - name: Resync Single Issue or PR
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ steps.bot_token.outputs.token }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issueNumber = context.payload.issue.number;
+            const commentId = context.payload.comment.id;
+
+            console.log(`⚡ Perintah /resync diterima pada tiket #${issueNumber}! Memulai sinkronisasi kilat...`);
+
+            // 1. Berikan reaksi mata (👀) di komentar lu sebagai tanda bot sedang bekerja
+            try {
+              await github.rest.reactions.createForIssueComment({
+                owner, repo, comment_id: commentId, content: 'eyes'
+              });
+            } catch (e) {}
+
+            // 2. Ambil data Isu/PR tersebut
+            const issueRes = await github.rest.issues.get({ owner, repo, issue_number: issueNumber });
+            const issue = issueRes.data;
+            const oldBody = issue.body || '';
+            const currentLabels = issue.labels.map(l => l.name);
+
+            // 3. Ekstrak GHSA ID
+            const ghsaMatch = oldBody.match(/\*\*GHSA ID:\*\*\s*(GHSA-[A-Z0-9-]+)/i);
+            if (!ghsaMatch) {
+              console.log(`❌ Tiket #${issueNumber} tidak memiliki GHSA ID yang valid.`);
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: issueNumber,
+                body: `❌ **Gagal Resync:** Tidak ditemukan GHSA ID yang valid di dalam teks tiket ini.`
+              });
+              return;
+            }
+            
+            const ghsa = ghsaMatch[1].toUpperCase();
+            console.log(`🔍 Mendeteksi GHSA ID: ${ghsa}`);
+
+            // 4. Deteksi Sumber (Alert atau PR)
+            let sourceUrl = '';
+            let sourceNumber = '';
+            let sourceType = issue.pull_request ? 'PR' : 'Alert';
+            
+            if (!issue.pull_request) {
+              const alertMatch = oldBody.match(/\[Dependabot Alert #(\d+)\]\((https:\/\/[^\s\)]+)\)/i);
+              if (alertMatch) {
+                sourceNumber = alertMatch[1];
+                sourceUrl = alertMatch[2];
+              }
+            } else {
+              sourceNumber = issueNumber.toString();
+              sourceUrl = issue.html_url;
+              sourceType = 'PR';
+            }
+
+            const pkgMatch = oldBody.match(/\*\*Package:\*\*\s*`?([^\n`]+)`?/i) || [];
+            const pkg = pkgMatch[1] ? pkgMatch[1].trim() : 'Unknown';
+            const osvMatch = oldBody.match(/\*\*Alt ID \(OSV\/Snyk\):\*\*\s*([^\n]+)/i) || [];
+            const osvId = osvMatch[1] || 'No Alt ID';
+
+            let title = issue.title;
+            let descText = 'No description available.';
+            let severity = 'UNKNOWN';
+            let cvss = 'N/A';
+            let vectorString = 'N/A';
+            let cve = 'No CVE';
+            let cweList = 'N/A';
+            let vulnRange = 'Unknown';
+            let patched = 'None';
+
+            // 5. Tarik Data dengan Sistem Fallback
+            let advData = null;
+            let advisoryUrl = `https://github.com/advisories/${ghsa}`;
+            const advUrlMatch = oldBody.match(/- Advisory:\s*(https:\/\/[^\s]+)/i);
+            if (advUrlMatch) advisoryUrl = advUrlMatch[1];
+
+            try {
+              const advResponse = await github.request('GET /advisories/{ghsa_id}', { ghsa_id: ghsa });
+              advData = advResponse.data;
+              console.log(`✅ Data ditarik dari Global Advisory Database.`);
+            } catch (e) {
+              console.log(`⚠️ Global API gagal. Mencoba jalur Fallback internal...`);
+              if (sourceType === 'Alert' && sourceNumber) {
+                try {
+                  const alertResponse = await github.request('GET /repos/{owner}/{repo}/dependabot/alerts/{alert_number}', {
+                    owner, repo, alert_number: parseInt(sourceNumber)
+                  });
+                  advData = alertResponse.data.security_advisory;
+                  if (advData.html_url) advisoryUrl = advData.html_url;
+                  console.log(`✅ Data berhasil ditarik dari Internal Dependabot Alert.`);
+                } catch (err2) {
+                  console.log(`❌ Fallback gagal: ${err2.message}`);
+                }
+              }
+            }
+
+            if (!advData) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: issueNumber,
+                body: `❌ **Gagal Resync:** Metadata untuk \`${ghsa}\` tidak ditemukan di Global maupun Internal Database.`
+              });
+              return;
+            }
+
+            // Timpa Data
+            title = advData.summary || title;
+            descText = advData.description || descText;
+            severity = advData.severity ? advData.severity.toUpperCase() : severity;
+            cvss = advData.cvss && advData.cvss.score ? advData.cvss.score.toString() : cvss;
+            vectorString = advData.cvss && advData.cvss.vector_string ? advData.cvss.vector_string : vectorString;
+            cve = advData.cve_id || cve;
+            advisoryUrl = advData.html_url || advData.url || advisoryUrl;
+
+            if (advData.cwes && advData.cwes.length > 0) {
+              cweList = advData.cwes.map(c => `- **${c.cwe_id}**: ${c.name}`).join('\n');
+            }
+
+            if (advData.vulnerabilities && advData.vulnerabilities.length > 0) {
+              let ranges = []; let fixes = [];
+              advData.vulnerabilities.forEach(v => {
+                if (v.package && v.package.name === pkg) {
+                  if (v.vulnerable_version_range) ranges.push(v.vulnerable_version_range);
+                  if (v.first_patched_version) fixes.push(v.first_patched_version);
+                }
+              });
+              if (ranges.length > 0) vulnRange = ranges.join('\n  - ');
+              if (fixes.length > 0) patched = fixes.join('\n  - ');
+            }
+
+            if (severity === 'MEDIUM') severity = 'MODERATE';
+
+            function parseCvssVector(vector) {
+              if (!vector || vector === 'N/A') return '*Data metrik belum dipublikasikan oleh repositori database.*';
+              const map = { 'AV:N':'Network', 'AV:A':'Adjacent', 'AV:L':'Local', 'AV:P':'Physical', 'AC:L':'Low', 'AC:H':'High', 'PR:N':'None', 'PR:L':'Low', 'PR:H':'High', 'UI:N':'None', 'UI:R':'Required', 'S:U':'Unchanged', 'S:C':'Changed', 'C:N':'None', 'C:L':'Low', 'C:H':'High', 'I:N':'None', 'I:L':'Low', 'I:H':'High', 'A:N':'None', 'A:L':'Low', 'A:H':'High' };
+              const parts = vector.replace(/^CVSS:3\.[01]\//, '').split('/');
+              let result = `**Vector:** \`${vector}\`\n`;
+              parts.forEach(p => { const [k, v] = p.split(':'); if (map[`${k}:${v}`]) { const name = k==='AV'?'Attack vector':k==='AC'?'Attack complexity':k==='PR'?'Privileges required':k==='UI'?'User interaction':k==='S'?'Scope':k==='C'?'Confidentiality':k==='I'?'Integrity':k==='A'?'Availability':k; result += `- **${name}:** ${map[`${k}:${v}`]}\n`; } });
+              return result;
+            }
+            const cvssMetrics = parseCvssVector(vectorString);
+
+            // Rangkai Body Baru
+            let newBody = `🚨 **Sumber Peringatan:** [Dependabot Alert #${sourceNumber || issueNumber}](${sourceUrl})
+
+            ### Description
+            ${descText}
+            
+            ### Severity Check
+            - [${severity === 'LOW' ? 'x' : ' '}] Low
+            - [${severity === 'MODERATE' ? 'x' : ' '}] Moderate
+            - [${severity === 'HIGH' ? 'x' : ' '}] High
+            - [${severity === 'CRITICAL' ? 'x' : ' '}] Critical
+            
+            ### Severity Score
+            ${cvss} / 10
+
+            ### CVSS v3 Base Metrics
+            ${cvssMetrics}
+            
+            ### Identifiers
+            - **GHSA ID:** ${ghsa}
+            - **CVE ID:** ${cve}
+            - **Alt ID (OSV/Snyk):** ${osvId}
+            
+            ### Weaknesses
+            ${cweList !== 'N/A' ? cweList : '- N/A'}
+            
+            ### Affected
+            - **Package:** \`${pkg}\`
+            - **Affected versions:**
+              - ${vulnRange}
+            - **Patched versions:**
+              - ${patched}
+            
+            ### References
+            - Advisory: ${advisoryUrl}
+            - Alert Link: ${sourceUrl}
+            
+            ---
+            _Auto-generated from command /resync._`;
+
+            // Update Isu
+            await github.rest.issues.update({
+              owner, repo, issue_number: issueNumber, title: title, body: newBody
+            });
+
+            // Manajemen Label
+            let targetSeverityLabel = severity === 'CRITICAL' ? 'Critical' : severity === 'HIGH' ? 'High' : severity === 'MODERATE' ? 'Moderate' : 'Low';
+            const severityPool = ['Low', 'Moderate', 'High', 'Critical'];
+            let wrongSeverityLabels = currentLabels.filter(l => severityPool.includes(l) && l !== targetSeverityLabel);
+
+            for (const wrongLabel of wrongSeverityLabels) {
+              try { await github.rest.issues.removeLabel({ owner, repo, issue_number: issueNumber, name: wrongLabel }); } catch (e) {}
+            }
+
+            let labelsToPush = [];
+            if (!currentLabels.includes(targetSeverityLabel)) labelsToPush.push(targetSeverityLabel);
+            if (issue.state === 'closed' && !currentLabels.includes('Fixed')) labelsToPush.push('Fixed');
+
+            if (labelsToPush.length > 0) {
+              await github.rest.issues.addLabels({ owner, repo, issue_number: issueNumber, labels: labelsToPush });
+            }
+
+            // 6. Beri tanda sukses berupa komentar balasan & reaksi (🚀)
+            try {
+              await github.rest.reactions.createForIssueComment({
+                owner, repo, comment_id: commentId, content: 'rocket'
+              });
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: issueNumber,
+                body: `✨ **Resync Berhasil!** Tiket ini telah diperbarui dengan data terbaru untuk \`${ghsa}\`.`
+              });
+            } catch (e) {}
+
+            console.log(`✅ Sukses melakukan resync manual pada tiket #${issueNumber}!`);
