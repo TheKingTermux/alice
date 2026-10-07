@@ -45,21 +45,26 @@ jobs:
               const oldBody = issue.body || '';
               const currentLabels = issue.labels.map(l => l.name);
               
-              // 1. Ekstrak GHSA ID
+              // 1. Ekstrak GHSA ID atau Fallback ke CVE ID
               const ghsaMatch = oldBody.match(/\*\*GHSA ID:\*\*\s*(GHSA-[A-Z0-9-]+)/i);
-              if (!ghsaMatch) {
+              let ghsa = ghsaMatch ? ghsaMatch[1].toUpperCase() : null;
+
+              const cveMatch = oldBody.match(/\*\*CVE ID:\*\*\s*(CVE-\d{4}-\d+)/i);
+              let cveFallback = cveMatch ? cveMatch[1].toUpperCase() : null;
+
+              if (!ghsa && (!cveFallback || cveFallback === 'NO CVE')) {
                 syncedCount++; 
                 continue; 
               }
-              const ghsa = ghsaMatch[1].toUpperCase();
-              console.log(`\n⏳ Menyelaraskan Issue #${issue.number} (${ghsa})...`);
+              
+              console.log(`\n⏳ Menyelaraskan Issue #${issue.number} (GHSA: ${ghsa \vert{}\vert{} 'N/A'}, CVE:${cveFallback || 'N/A'})...`);
 
               // 2. Deteksi Jenis Issue
               let sourceUrl = '';
               let sourceNumber = '';
               let sourceType = 'PR';
               
-              const alertMatch = oldBody.match(/\[Dependabot Alert #(\d+)\]\((https:\/\/[^\s\)]+)\)/i);
+              const alertMatch = oldBody.match(/\[Dependabot Alert #(\d+)\]\((https:\/\/[^\s\)]+)\)/i) || oldBody.match(/Alert Link:\s*(https:\/\/[^\s]+)/i);
               if (alertMatch) {
                 sourceType = 'Alert';
                 sourceNumber = alertMatch[1];
@@ -82,45 +87,53 @@ jobs:
               let severity = 'UNKNOWN';
               let cvss = 'N/A';
               let vectorString = 'N/A';
-              let cve = 'No CVE';
+              let cve = cveFallback || 'No CVE';
               let cweList = 'N/A';
-              let vulnRange = 'Unknown';
-              let patched = 'None';
+              let vulnRange = '`Unknown`';
+              let patched = '`None`';
 
               // ========================================================
-              // 3. TARIK DATA TERBARU DENGAN SISTEM FALLBACK
+              // 3. TARIK DATA TERBARU DENGAN SISTEM FALLBACK (GHSA -> CVE -> Alert)
               // ========================================================
               let advData = null;
               
-              // Ekstrak URL lama untuk backup absolut
-              let advisoryUrl = `https://github.com/advisories/${ghsa}`;
+              let advisoryUrl = ghsa ? `https://github.com/advisories/${ghsa}` : `https://nvd.nist.gov/vuln/detail/${cve}`;
               const advUrlMatch = oldBody.match(/- Advisory:\s*(https:\/\/[^\s]+)/i);
               if (advUrlMatch) advisoryUrl = advUrlMatch[1];
 
               try {
-                // JALUR UTAMA: Global GitHub Advisory Database
-                const advResponse = await github.request('GET /advisories/{ghsa_id}', { ghsa_id: ghsa });
-                advData = advResponse.data;
-                console.log(`✅ Data ditarik dari Global Advisory Database.`);
+                if (ghsa) {
+                  const advResponse = await github.request('GET /advisories/{ghsa_id}', { ghsa_id: ghsa });
+                  advData = advResponse.data;
+                  console.log(`✅ Data ditarik dari Global Advisory Database via GHSA.`);
+                } else if (cveFallback && cveFallback !== 'NO CVE') {
+                  const searchRes = await github.request('GET /advisories', { cve_id: cveFallback });
+                  if (searchRes.data && searchRes.data.length > 0) {
+                    advData = searchRes.data[0];
+                    ghsa = advData.ghsa_id ? advData.ghsa_id.toUpperCase() : ghsa;
+                    console.log(`✅ Data ditemukan via pencarian CVE ID di Global Advisory Database.`);
+                  }
+                }
               } catch (e) {
                 console.log(`⚠️ Global API gagal (${e.message}). Mencoba jalur Fallback internal...`);
-                
-                // JALUR FALLBACK: Internal Dependabot Alert (Mengandung repo-level advisory)
-                if (sourceType === 'Alert' && sourceNumber) {
-                  try {
-                    const alertResponse = await github.request('GET /repos/{owner}/{repo}/dependabot/alerts/{alert_number}', {
-                      owner, repo, alert_number: parseInt(sourceNumber)
-                    });
-                    advData = alertResponse.data.security_advisory;
-                    console.log(`✅ Data berhasil ditarik dari Internal Dependabot Alert #${sourceNumber}.`);
-                  } catch (err2) {
-                    console.log(`❌ Jalur Fallback gagal: ${err2.message}`);
-                  }
+              }
+
+              if (!advData && sourceType === 'Alert' && sourceNumber) {
+                try {
+                  const alertResponse = await github.request('GET /repos/{owner}/{repo}/dependabot/alerts/{alert_number}', {
+                    owner, repo, alert_number: parseInt(sourceNumber)
+                  });
+                  advData = alertResponse.data.security_advisory;
+                  if (advData.ghsa_id) ghsa = advData.ghsa_id.toUpperCase();
+                  if (advData.html_url) advisoryUrl = advData.html_url;
+                  console.log(`✅ Data berhasil ditarik dari Internal Dependabot Alert #${sourceNumber}.`);
+                } catch (err2) {
+                  console.log(`❌ Jalur Fallback gagal: ${err2.message}`);
                 }
               }
 
               if (!advData) {
-                console.log(`❌ Tidak ada metadata yang bisa diakses untuk ${ghsa}. Lewati.`);
+                console.log(`❌ Tidak ada metadata yang bisa diakses untuk tiket #${issue.number}. Lewati.`);
                 failedCount++;
                 continue;
               }
@@ -132,7 +145,7 @@ jobs:
               cvss = advData.cvss && advData.cvss.score ? advData.cvss.score.toString() : cvss;
               vectorString = advData.cvss && advData.cvss.vector_string ? advData.cvss.vector_string : vectorString;
               cve = advData.cve_id || cve;
-              advisoryUrl = advData.html_url || advData.url || advisoryUrl; // Pastikan URL menggunakan sumber yang benar
+              advisoryUrl = advData.html_url || advData.url || advisoryUrl;
               
               if (advData.cwes && advData.cwes.length > 0) {
                 cweList = advData.cwes.map(c => `- **${c.cwe_id}**: ${c.name}`).join('\n');
@@ -142,12 +155,12 @@ jobs:
                 let ranges = []; let fixes = [];
                 advData.vulnerabilities.forEach(v => {
                   if (v.package && v.package.name === pkg) {
-                    if (v.vulnerable_version_range) ranges.push(v.vulnerable_version_range);
-                    if (v.first_patched_version) fixes.push(v.first_patched_version);
+                    if (v.vulnerable_version_range) ranges.push('`' + v.vulnerable_version_range + '`');
+                    if (v.first_patched_version) fixes.push('`' + v.first_patched_version + '`');
                   }
                 });
                 if (ranges.length > 0) vulnRange = ranges.join('\n  - ');
-                if (fixes.length > 0) patched = fixes.join('\n  - ');
+                if (fixes.length > 0) patched = fixes.join(' / ');
               }
 
               if (severity === 'MEDIUM') severity = 'MODERATE';
@@ -185,7 +198,7 @@ jobs:
             ${cvssMetrics}
             
             ### Identifiers
-            - **GHSA ID:** ${ghsa}
+            - **GHSA ID:** ${ghsa || 'N/A'}
             - **CVE ID:** ${cve}
             - **Alt ID (OSV/Snyk):** ${osvId}
             
@@ -229,7 +242,7 @@ jobs:
             ${cvssMetrics}
             
             ### Identifiers
-            - **GHSA ID:** ${ghsa}
+            - **GHSA ID:** ${ghsa || 'N/A'}
             - **CVE ID:** ${cve}
             - **Alt ID (OSV/Snyk):** ${osvId}
             

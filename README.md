@@ -2,6 +2,7 @@
 |-------|
 | [![CodeQL](https://github.com/TheKingTermux/alice/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/TheKingTermux/alice/actions/workflows/github-code-scanning/codeql)
 | [![Dependency Review](https://github.com/TheKingTermux/alice/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/TheKingTermux/alice/actions/workflows/dependency-review.yml) |
+| [![Security PR](https://github.com/TheKingTermux/alice/actions/workflows/auto-security-issue.yml/badge.svg?branch=main)](https://github.com/TheKingTermux/alice/actions/workflows/auto-security-issue.yml) |
 
 #  AཽLཽIཽCཽEཽ
 Jan lupa follow ig ku : @thekingtermux
