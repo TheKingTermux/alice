@@ -48,7 +48,7 @@ jobs:
 
                 for (const comment of comments) {
                   const isOldResync = comment.body.trim() === '/resync' || comment.body.trim() === '/resync ';
-                  const isOldErrorBot = comment.body.includes('❌ **Resync Gagal:**');
+                  const isOldErrorBot = comment.body.includes('❌ **Gagal Resync:**');
                   
                   if (comment.id !== currentCommentId && (isOldResync || isOldErrorBot)) {
                     await github.graphql(`
