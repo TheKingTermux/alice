@@ -66,8 +66,8 @@ jobs:
                 let vectorString = 'N/A';
                 let osvId = 'No Alt ID';
                 let cweList = 'N/A';
-                let vulnRange = 'Unknown';
-                let patched = 'None';
+                let vulnRange = '- `Unknown`';
+                let patched = '- `None`';
                 let advisoryLink = ghsa ? `https://github.com/advisories/${ghsa}` : (cve !== 'No CVE' ? `https://nvd.nist.gov/vuln/detail/${cve}` : alertUrl);
 
                 // ==========================================
@@ -121,12 +121,12 @@ jobs:
                     let fixes = [];
                     advData.vulnerabilities.forEach(v => {
                       if (v.package && v.package.name === pkg) {
-                        if (v.vulnerable_version_range) ranges.push(v.vulnerable_version_range);
-                        if (v.first_patched_version) fixes.push(v.first_patched_version);
+                        if (v.vulnerable_version_range) ranges.push('- `' + v.vulnerable_version_range + '`');
+                        if (v.first_patched_version) fixes.push('- `' + v.first_patched_version + '`');
                       }
                     });
-                    if (ranges.length > 0) vulnRange = ranges.join('\n  - ');
-                    if (fixes.length > 0) patched = fixes.join('\n  - ');
+                    if (ranges.length > 0) vulnRange = ranges.join('\n  ');
+                    if (fixes.length > 0) patched = fixes.join('\n  ');
                   }
                 }
 
@@ -189,9 +189,9 @@ jobs:
                 ### Affected
                 - **Package:** \`${pkg}\`
                 - **Affected versions:**
-                  - ${vulnRange}
+                  ${vulnRange}
                 - **Patched versions:**
-                  - ${patched}
+                  ${patched}
                 
                 ### References
                 - Advisory: ${advisoryLink}
