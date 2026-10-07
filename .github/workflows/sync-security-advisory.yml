@@ -57,7 +57,7 @@ jobs:
                 continue; 
               }
               
-              console.log(`\n⏳ Menyelaraskan Issue #${issue.number} (GHSA: ${ghsa || 'N/A'}, CVE:${cveFallback || 'N/A'})...`);
+              console.log(`\n⏳ Menyelaraskan Issue #${issue.number} (GHSA: ${ghsa || 'N/A'}, CVE: ${cveFallback || 'N/A'})...`);
 
               // 2. Deteksi Jenis Issue
               let sourceUrl = '';
