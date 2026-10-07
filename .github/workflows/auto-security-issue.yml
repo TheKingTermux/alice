@@ -136,8 +136,8 @@ jobs:
                 let ranges = [];
                 let fixes = [];
                 advData.vulnerabilities.forEach(v => {
-                  if (v.vulnerable_version_range) ranges.push(v.vulnerable_version_range);
-                  if (v.first_patched_version) fixes.push(v.first_patched_version);
+                  if (v.vulnerable_version_range) ranges.push('`' + v.vulnerable_version_range + '`');
+                  if (v.first_patched_version) fixes.push('`' + v.first_patched_version + '`');
                 });
                 if (ranges.length > 0) vulnRange = ranges.join('\n  - ');
                 if (fixes.length > 0) patched = fixes.join(' / ');
@@ -209,8 +209,11 @@ jobs:
             );
             const existing = issues.find(i => i.title === title);
 
-            // Tentukan link Advisory berdasarkan apakah GHSA tersedia
             const advisoryLink = ghsa !== 'No GHSA' ? `https://github.com/advisories/${ghsa}` : (cve !== 'No CVE' ? `https://nvd.nist.gov/vuln/detail/${cve}` : process.env.PR_URL);
+
+            // Jika vulnRange belum berformat backtick dari helper, bungkus dulu
+            const finalVulnRange = vulnRange.startsWith('`') ? vulnRange : '`' + vulnRange + '`';
+            const finalPatched = patched.startsWith('`') ? patched : (patched !== 'None' ? '`' + patched + '`' : 'None');
 
             const body = `## 🛡️ Security Vulnerability (from ${botType} PR #${process.env.PR_NUMBER})
 
@@ -240,8 +243,8 @@ jobs:
             ### Affected
             - **Package:** ${pkg}
             - **Affected versions:**
-              - ${vulnRange}
-            - **Patched versions:** ${patched}
+              - ${finalVulnRange}
+            - **Patched versions:** ${finalPatched}
             
             ### References
             - Advisory: ${advisoryLink}
