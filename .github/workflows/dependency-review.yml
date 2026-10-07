@@ -64,7 +64,7 @@ jobs:
                       pkg: dep.name,
                       ghsa: vuln.advisory_ghsa_id ? vuln.advisory_ghsa_id.toUpperCase() : null,
                       cve: vuln.advisory_ids ? vuln.advisory_ids.find(id => id.startsWith('CVE-')) : null,
-                      vulnRange: vuln.vulnerable_version_range || 'Unknown'
+                      vulnRange: vuln.vulnerable_version_range ? '`' + vuln.vulnerable_version_range + '`' : '`Unknown`'
                     });
                   }
                 }
@@ -102,7 +102,7 @@ jobs:
                 let osvId = 'No Alt ID';
                 let cweList = 'N/A';
                 let vulnRange = vuln.vulnRange;
-                let patched = 'None';
+                let patched = '`None`';
 
                 // ==========================================
                 // 3. FETCH KE GITHUB ADVISORY API (DENGAN FALLBACK GHSA -> CVE)
@@ -148,8 +148,8 @@ jobs:
                     let ranges = [];
                     let fixes = [];
                     advData.vulnerabilities.forEach(v => {
-                      if (v.vulnerable_version_range) ranges.push(v.vulnerable_version_range);
-                      if (v.first_patched_version) fixes.push(v.first_patched_version);
+                      if (v.vulnerable_version_range) ranges.push('`' + v.vulnerable_version_range + '`');
+                      if (v.first_patched_version) fixes.push('`' + v.first_patched_version + '`');
                     });
                     if (ranges.length > 0) vulnRange = ranges.join('\n  - ');
                     if (fixes.length > 0) patched = fixes.join(' / ');
