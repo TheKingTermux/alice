@@ -43,18 +43,6 @@ goto :MainMenu
 
 :RunTheBot
 cls
-echo Running The Bot
-echo:
-echo Mohon Bersabar Ya
-echo:
-echo Mencari Sumber Script
-echo:
-g:
-echo Ditemukan Lokasi Sumber Script pada drive "G"
-echo:
-cd alice
-echo Ditemukan Folder Sumber Script pada drive "g:\alice"
-echo:
 echo Menjalankan Bot
 npm start
 
