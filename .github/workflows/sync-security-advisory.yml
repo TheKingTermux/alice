@@ -52,7 +52,7 @@ jobs:
               const cveMatch = oldBody.match(/\*\*CVE ID:\*\*\s*(CVE-\d{4}-\d+)/i);
               let cveFallback = cveMatch ? cveMatch[1].toUpperCase() : null;
 
-              if (!ghsa && (!cveFallback || cveFallback === 'NO CVE' || cveFallback === 'NO CVE')) {
+              if (!ghsa && (!cveFallback || cveFallback === 'NO CVE')) {
                 syncedCount++; 
                 continue; 
               }
@@ -64,7 +64,7 @@ jobs:
               let sourceNumber = '';
               let sourceType = 'PR';
               
-              const alertMatch = oldBody.match(/\[Dependabot Alert #(\d+)\]\((https:\/\/[^\s\)]+)\)/i);
+              const alertMatch = oldBody.match(/\[Dependabot Alert #(\d+)\]\((https:\/\/[^\s\)]+)\)/i) || oldBody.match(/Alert Link:\s*(https:\/\/[^\s]+)/i);
               if (alertMatch) {
                 sourceType = 'Alert';
                 sourceNumber = alertMatch[1];
@@ -89,8 +89,8 @@ jobs:
               let vectorString = 'N/A';
               let cve = cveFallback || 'No CVE';
               let cweList = 'N/A';
-              let vulnRange = 'Unknown';
-              let patched = 'None';
+              let vulnRange = '`Unknown`';
+              let patched = '`None`';
 
               // ========================================================
               // 3. TARIK DATA TERBARU DENGAN SISTEM FALLBACK (GHSA -> CVE -> Alert)
@@ -125,6 +125,7 @@ jobs:
                   });
                   advData = alertResponse.data.security_advisory;
                   if (advData.ghsa_id) ghsa = advData.ghsa_id.toUpperCase();
+                  if (advData.html_url) advisoryUrl = advData.html_url;
                   console.log(`✅ Data berhasil ditarik dari Internal Dependabot Alert #${sourceNumber}.`);
                 } catch (err2) {
                   console.log(`❌ Jalur Fallback gagal: ${err2.message}`);
@@ -154,12 +155,12 @@ jobs:
                 let ranges = []; let fixes = [];
                 advData.vulnerabilities.forEach(v => {
                   if (v.package && v.package.name === pkg) {
-                    if (v.vulnerable_version_range) ranges.push(v.vulnerable_version_range);
-                    if (v.first_patched_version) fixes.push(v.first_patched_version);
+                    if (v.vulnerable_version_range) ranges.push('`' + v.vulnerable_version_range + '`');
+                    if (v.first_patched_version) fixes.push('`' + v.first_patched_version + '`');
                   }
                 });
                 if (ranges.length > 0) vulnRange = ranges.join('\n  - ');
-                if (fixes.length > 0) patched = fixes.join('\n  - ');
+                if (fixes.length > 0) patched = fixes.join(' / ');
               }
 
               if (severity === 'MEDIUM') severity = 'MODERATE';
