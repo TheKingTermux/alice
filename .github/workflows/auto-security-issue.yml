@@ -11,7 +11,6 @@ permissions:
 
 jobs:
   process-security-pr:
-    # 1. GERBANG DIBUKA: Terima semua PR Dependabot, ATAU PR Renovate yang judulnya ada 'security'
     if: >
       github.event.pull_request.user.login == 'dependabot[bot]' ||
       (github.event.pull_request.user.login == 'renovate[bot]' && contains(github.event.pull_request.title, 'security'))
@@ -20,12 +19,11 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v7
 
-      # 🤖 LANGKAH TAMBAHAN: Generate token khusus untuk bot Anda
       - name: Generate Bot Token
         id: get_bug_bot_token
         uses: actions/create-github-app-token@v3
         with:
-          client-id: ${{ secrets.BOT_APP_ID }} # Menggunakan client-id terbaru
+          client-id: ${{ secrets.BOT_APP_ID }}
           private-key: ${{ secrets.BOT_PRIVATE_KEY }}
 
       - name: Extract info & Create/Update Issue
@@ -48,27 +46,19 @@ jobs:
             const author = process.env.PR_AUTHOR || '';
             const botType = author === 'renovate[bot]' ? 'Renovate' : 'Dependabot';
 
-            // ==========================================
-            // STRATEGI TAMBAHAN 1: Multi-Pattern ID Extractors (Super Lengkap)
-            // ==========================================
-            
-            // 1. GHSA ID
+            // 1. Ekstraksi ID (GHSA, CVE, CWE, OSV)
             const ghsaMatch = prBody.match(/(GHSA-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4})/i) || prTitle.match(/(GHSA-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4})/i);
             let ghsa = ghsaMatch ? ghsaMatch[1].toUpperCase() : 'No GHSA';
             
-            // 2. CVE ID
             const cveMatch = prBody.match(/(CVE-\d{4}-\d{4,7})/i) || prTitle.match(/(CVE-\d{4}-\d{4,7})/i);
             let cve = cveMatch ? cveMatch[1].toUpperCase() : 'No CVE';
 
-            // 3. CWE ID (Common Weakness Enumeration)
             const cweMatch = prBody.match(/(CWE-\d+)/i) || prTitle.match(/(CWE-\d+)/i);
             let extractedCwe = cweMatch ? cweMatch[1].toUpperCase() : null;
 
-            // 4. Alternate OSV/Ecosystem ID (Snyk, NPM, RustSec, PySec, Go, dll)
             const osvMatch = prBody.match(/(SNYK-[a-zA-Z0-9-]+|NPM-\d+-\d+|RUSTSEC-\d{4}-\d+|PYSEC-\d{4}-\d+|GO-\d{4}-\d+)/i);
             let osvId = osvMatch ? osvMatch[1].toUpperCase() : 'No Alt ID';
 
-            // Deteksi nama paket kerentanan (Diperkuat dengan pola ganda)
             let pkg = 'Unknown';
             const pkgMatch = prTitle.match(/(?:bumps?|updates?)\s+(?:dependency\s+)?([^\s]+)/i) || 
                              prBody.match(/(?:bumps?|updates?)\s+(?:dependency\s+)?([^\s]+)\s+from/i);
@@ -81,10 +71,9 @@ jobs:
               if (nameMatch && (pkg === 'Unknown' || !pkg)) pkg = nameMatch[1].trim();
             }
 
-            // Inisialisasi variabel penampung data
             let severity = 'UNKNOWN';
             let cvss = 'N/A';
-            let vectorString = 'N/A'; // Menampung kode mentah metrik CVSS
+            let vectorString = 'N/A';
             let title = `Security Update: ${pkg} (${ghsa !== 'No GHSA' ? ghsa : (cve !== 'No CVE' ? cve : osvId)})`;
             let summaryDesc = `${botType} security update detected.`;
             let cweList = extractedCwe ? extractedCwe : 'N/A';
@@ -92,48 +81,69 @@ jobs:
             let patched = 'None';
 
             // ==========================================
-            // STRATEGI TAMBAHAN 2: Fetch Ganda (Public Advisory API)
+            // STRATEGI FALLBACK ID: GHSA -> CVE
             // ==========================================
-            if (ghsa !== 'No GHSA') {
-              try {
-                console.log(`🔍 Mengambil data kerentanan resmi untuk ${ghsa} via Public API...`);
-                const advResponse = await fetch(`https://api.github.com/advisories/${ghsa}`);
-                
-                if (advResponse.ok) {
-                  const advData = await advResponse.json();
-                  
-                  if (advData.summary) title = advData.summary;
-                  if (advData.description) summaryDesc = advData.description;
-                  if (advData.severity) severity = advData.severity.toUpperCase();
-                  if (advData.cvss && advData.cvss.score) cvss = advData.cvss.score.toString();
-                  if (advData.cvss && advData.cvss.vector_string) vectorString = advData.cvss.vector_string;
+            try {
+              let fetched = false;
 
-                  if (advData.cwes && advData.cwes.length > 0) {
-                    cweList = advData.cwes.map(c => `${c.cwe_id} (${c.name})`).join(', ');
-                  }
-
-                  if (advData.vulnerabilities && advData.vulnerabilities.length > 0) {
-                    let ranges = [];
-                    let fixes = [];
-                    advData.vulnerabilities.forEach(v => {
-                      if (v.vulnerable_version_range) ranges.push(v.vulnerable_version_range);
-                      if (v.first_patched_version) fixes.push(v.first_patched_version);
-                    });
-                    if (ranges.length > 0) vulnRange = ranges.join('\n  - ');
-                    if (fixes.length > 0) patched = fixes.join(' / ');
-                  }
-                  console.log(`✅ Data berhasil diamankan dari Public API.`);
-                } else {
-                  console.log(`⚠️ Public API ditolak (Status: ${advResponse.status}). Mencoba metode investigasi cadangan...`);
+              // 1. Coba fetch pakai GHSA jika tersedia
+              if (ghsa !== 'No GHSA') {
+                console.log(`🔍 Mengambil data resmi via GHSA: ${ghsa}...`);
+                const res = await fetch(`https://api.github.com/advisories/${ghsa}`);
+                if (res.ok) {
+                  const data = await res.json();
+                  applyAdvisoryData(data);
+                  fetched = true;
                 }
-              } catch (apiError) {
-                console.log(`⚠️ Gagal fetch Public API (${apiError.message}).`);
+              }
+
+              // 2. Jika GHSA 'No GHSA' atau gagal, Fallback ke CVE ID
+              if (!fetched && cve !== 'No CVE') {
+                console.log(`⚠️ GHSA tidak ditemukan, mencoba fallback via CVE ID: ${cve}...`);
+                const res = await fetch(`https://api.github.com/advisories?cve_id=${cve}`);
+                if (res.ok) {
+                  const list = await res.json();
+                  if (list && list.length > 0) {
+                    const data = list[0];
+                    if (data.ghsa_id) ghsa = data.ghsa_id.toUpperCase();
+                    applyAdvisoryData(data);
+                    fetched = true;
+                  }
+                }
+              }
+
+              if (!fetched) {
+                console.log(`⚠️ Advisory API tidak menemukan data untuk GHSA/CVE terkait. Menggunakan data dasar PR.`);
+              }
+            } catch (err) {
+              console.log(`⚠️ Gagal fetch Public Advisory API: ${err.message}`);
+            }
+
+            // Helper untuk memasukkan data dari API
+            function applyAdvisoryData(advData) {
+              if (advData.summary) title = advData.summary;
+              if (advData.description) summaryDesc = advData.description;
+              if (advData.severity) severity = advData.severity.toUpperCase();
+              if (advData.cvss && advData.cvss.score) cvss = advData.cvss.score.toString();
+              if (advData.cvss && advData.cvss.vector_string) vectorString = advData.cvss.vector_string;
+              if (advData.cve_id) cve = advData.cve_id;
+
+              if (advData.cwes && advData.cwes.length > 0) {
+                cweList = advData.cwes.map(c => `${c.cwe_id} (${c.name})`).join(', ');
+              }
+
+              if (advData.vulnerabilities && advData.vulnerabilities.length > 0) {
+                let ranges = [];
+                let fixes = [];
+                advData.vulnerabilities.forEach(v => {
+                  if (v.vulnerable_version_range) ranges.push(v.vulnerable_version_range);
+                  if (v.first_patched_version) fixes.push(v.first_patched_version);
+                });
+                if (ranges.length > 0) vulnRange = ranges.join('\n  - ');
+                if (fixes.length > 0) patched = fixes.join(' / ');
               }
             }
 
-            // ==========================================
-            // STRATEGI TAMBAHAN 3: Penerjemah CVSS Vector String ke Format Teks
-            // ==========================================
             function parseCvssVector(vector) {
               if (!vector || vector === 'N/A') return '*Data metrik belum dipublikasikan oleh repositori database.*';
               const map = {
@@ -160,7 +170,6 @@ jobs:
 
             const cvssMetrics = parseCvssVector(vectorString);
 
-            // Fallback investigasi teks jika API belum siap
             if (severity === 'UNKNOWN') {
               const severityMatch = prBody.match(/\*\*Severity:\*\*\s*(\w+)/i) || prBody.match(/Severity:\s*(\w+)/i);
               if (severityMatch) severity = severityMatch[1].toUpperCase();
@@ -200,6 +209,9 @@ jobs:
             );
             const existing = issues.find(i => i.title === title);
 
+            // Tentukan link Advisory berdasarkan apakah GHSA tersedia
+            const advisoryLink = ghsa !== 'No GHSA' ? `https://github.com/advisories/${ghsa}` : (cve !== 'No CVE' ? `https://nvd.nist.gov/vuln/detail/${cve}` : process.env.PR_URL);
+
             const body = `## 🛡️ Security Vulnerability (from ${botType} PR #${process.env.PR_NUMBER})
 
             ### Description
@@ -232,7 +244,7 @@ jobs:
             - **Patched versions:** ${patched}
             
             ### References
-            - Advisory: https://github.com/advisories/${ghsa}
+            - Advisory: ${advisoryLink}
             - PR: ${process.env.PR_URL}
             
             ---
