@@ -23,4 +23,3 @@ jobs:
           # Ganti GITHUB_TOKEN bawaan dengan token hasil generate bot pribadi
           repo_token: ${{ steps.bot_token.outputs.token }}
           issue_message: 'Terimakasih telah memberikan isu terbaru kepada kami'
-          pr_message: 'Terimakasih telah memberikan kontribusi kepada kami'
