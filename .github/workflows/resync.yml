@@ -11,7 +11,6 @@ permissions:
 
 jobs:
   resync-single-ticket:
-    # Hanya berjalan jika komentar persis berisi "/resync" (tidak peduli huruf besar/kecil)
     if: github.event.comment.body == '/resync' || github.event.comment.body == '/resync '
     runs-on: ubuntu-latest
     steps:
@@ -34,34 +33,36 @@ jobs:
 
             console.log(`⚡ Perintah /resync diterima pada tiket #${issueNumber}! Memulai sinkronisasi kilat...`);
 
-            // 1. Berikan reaksi mata (👀) di komentar lu sebagai tanda bot sedang bekerja
             try {
               await github.rest.reactions.createForIssueComment({
                 owner, repo, comment_id: commentId, content: 'eyes'
               });
             } catch (e) {}
 
-            // 2. Ambil data Isu/PR tersebut
             const issueRes = await github.rest.issues.get({ owner, repo, issue_number: issueNumber });
             const issue = issueRes.data;
             const oldBody = issue.body || '';
             const currentLabels = issue.labels.map(l => l.name);
 
-            // 3. Ekstrak GHSA ID
+            // 1. Ekstrak GHSA ID atau Fallback ke CVE ID
             const ghsaMatch = oldBody.match(/\*\*GHSA ID:\*\*\s*(GHSA-[A-Z0-9-]+)/i);
-            if (!ghsaMatch) {
-              console.log(`❌ Tiket #${issueNumber} tidak memiliki GHSA ID yang valid.`);
+            let ghsa = ghsaMatch ? ghsaMatch[1].toUpperCase() : null;
+            
+            const cveMatch = oldBody.match(/\*\*CVE ID:\*\*\s*(CVE-\d{4}-\d+)/i);
+            let cveFallback = cveMatch ? cveMatch[1].toUpperCase() : null;
+
+            if (!ghsa && (!cveFallback || cveFallback === 'NO CVE')) {
+              console.log(`❌ Tiket #${issueNumber} tidak memiliki GHSA ID maupun CVE ID yang valid.`);
               await github.rest.issues.createComment({
                 owner, repo, issue_number: issueNumber,
-                body: `❌ **Gagal Resync:** Tidak ditemukan GHSA ID yang valid di dalam teks tiket ini.`
+                body: `❌ **Gagal Resync:** Tidak ditemukan GHSA ID atau CVE ID yang valid di dalam teks tiket ini.`
               });
               return;
             }
-            
-            const ghsa = ghsaMatch[1].toUpperCase();
-            console.log(`🔍 Mendeteksi GHSA ID: ${ghsa}`);
 
-            // 4. Deteksi Sumber (Alert atau PR)
+            console.log(`🔍 Target Identifikasi -> GHSA: ${ghsa \vert{}\vert{} 'Tidak ada'}, CVE:${cveFallback || 'Tidak ada'}`);
+
+            // 2. Deteksi Sumber
             let sourceUrl = '';
             let sourceNumber = '';
             let sourceType = issue.pull_request ? 'PR' : 'Alert';
@@ -88,41 +89,52 @@ jobs:
             let severity = 'UNKNOWN';
             let cvss = 'N/A';
             let vectorString = 'N/A';
-            let cve = 'No CVE';
+            let cve = cveFallback || 'No CVE';
             let cweList = 'N/A';
             let vulnRange = 'Unknown';
             let patched = 'None';
+            let advisoryUrl = ghsa ? `https://github.com/advisories/${ghsa}` : `https://nvd.nist.gov/vuln/detail/${cve}`;
 
-            // 5. Tarik Data dengan Sistem Fallback
+            // 3. Tarik Data dengan Sistem Fallback Berlapis (GHSA -> CVE -> Internal Alert)
             let advData = null;
-            let advisoryUrl = `https://github.com/advisories/${ghsa}`;
-            const advUrlMatch = oldBody.match(/- Advisory:\s*(https:\/\/[^\s]+)/i);
-            if (advUrlMatch) advisoryUrl = advUrlMatch[1];
 
             try {
-              const advResponse = await github.request('GET /advisories/{ghsa_id}', { ghsa_id: ghsa });
-              advData = advResponse.data;
-              console.log(`✅ Data ditarik dari Global Advisory Database.`);
-            } catch (e) {
-              console.log(`⚠️ Global API gagal. Mencoba jalur Fallback internal...`);
-              if (sourceType === 'Alert' && sourceNumber) {
-                try {
-                  const alertResponse = await github.request('GET /repos/{owner}/{repo}/dependabot/alerts/{alert_number}', {
-                    owner, repo, alert_number: parseInt(sourceNumber)
-                  });
-                  advData = alertResponse.data.security_advisory;
-                  if (advData.html_url) advisoryUrl = advData.html_url;
-                  console.log(`✅ Data berhasil ditarik dari Internal Dependabot Alert.`);
-                } catch (err2) {
-                  console.log(`❌ Fallback gagal: ${err2.message}`);
+              if (ghsa) {
+                const advResponse = await github.request('GET /advisories/{ghsa_id}', { ghsa_id: ghsa });
+                advData = advResponse.data;
+                console.log(`✅ Data ditarik via GHSA dari Global Advisory Database.`);
+              } else if (cveFallback && cveFallback !== 'NO CVE') {
+                // Coba cari via endpoint query CVE jika GHSA kosong
+                const searchRes = await github.request('GET /advisories', { cve_id: cveFallback });
+                if (searchRes.data && searchRes.data.length > 0) {
+                  advData = searchRes.data[0];
+                  ghsa = advData.ghsa_id;
+                  console.log(`✅ Data ditemukan via pencarian CVE ID di Global Advisory Database.`);
                 }
+              }
+            } catch (e) {
+              console.log(`⚠️ Global API gagal (${e.message}). Mencoba jalur Fallback internal...`);
+            }
+
+            // Jika global tetap gagal, coba ambil dari Dependabot Alert internal
+            if (!advData && sourceType === 'Alert' && sourceNumber) {
+              try {
+                const alertResponse = await github.request('GET /repos/{owner}/{repo}/dependabot/alerts/{alert_number}', {
+                  owner, repo, alert_number: parseInt(sourceNumber)
+                });
+                advData = alertResponse.data.security_advisory;
+                if (advData.html_url) advisoryUrl = advData.html_url;
+                if (advData.ghsa_id) ghsa = advData.ghsa_id.toUpperCase();
+                console.log(`✅ Data berhasil ditarik dari Internal Dependabot Alert.`);
+              } catch (err2) {
+                console.log(`❌ Fallback internal gagal: ${err2.message}`);
               }
             }
 
             if (!advData) {
               await github.rest.issues.createComment({
                 owner, repo, issue_number: issueNumber,
-                body: `❌ **Gagal Resync:** Metadata untuk \`${ghsa}\` tidak ditemukan di Global maupun Internal Database.`
+                body: `❌ **Gagal Resync:** Metadata untuk \`${ghsa || cveFallback}\` tidak dapat ditemukan.`
               });
               return;
             }
@@ -134,7 +146,7 @@ jobs:
             cvss = advData.cvss && advData.cvss.score ? advData.cvss.score.toString() : cvss;
             vectorString = advData.cvss && advData.cvss.vector_string ? advData.cvss.vector_string : vectorString;
             cve = advData.cve_id || cve;
-            advisoryUrl = advData.html_url || advData.url || advisoryUrl;
+            if (advData.html_url) advisoryUrl = advData.html_url;
 
             if (advData.cwes && advData.cwes.length > 0) {
               cweList = advData.cwes.map(c => `- **${c.cwe_id}**: ${c.name}`).join('\n');
@@ -164,7 +176,6 @@ jobs:
             }
             const cvssMetrics = parseCvssVector(vectorString);
 
-            // Rangkai Body Baru
             let newBody = `🚨 **Sumber Peringatan:** [Dependabot Alert #${sourceNumber || issueNumber}](${sourceUrl})
 
             ### Description
@@ -183,7 +194,7 @@ jobs:
             ${cvssMetrics}
             
             ### Identifiers
-            - **GHSA ID:** ${ghsa}
+            - **GHSA ID:** ${ghsa || 'N/A'}
             - **CVE ID:** ${cve}
             - **Alt ID (OSV/Snyk):** ${osvId}
             
@@ -204,12 +215,10 @@ jobs:
             ---
             _Auto-generated from command /resync._`;
 
-            // Update Isu
             await github.rest.issues.update({
               owner, repo, issue_number: issueNumber, title: title, body: newBody
             });
 
-            // Manajemen Label
             let targetSeverityLabel = severity === 'CRITICAL' ? 'Critical' : severity === 'HIGH' ? 'High' : severity === 'MODERATE' ? 'Moderate' : 'Low';
             const severityPool = ['Low', 'Moderate', 'High', 'Critical'];
             let wrongSeverityLabels = currentLabels.filter(l => severityPool.includes(l) && l !== targetSeverityLabel);
@@ -226,14 +235,13 @@ jobs:
               await github.rest.issues.addLabels({ owner, repo, issue_number: issueNumber, labels: labelsToPush });
             }
 
-            // 6. Beri tanda sukses berupa komentar balasan & reaksi (🚀)
             try {
               await github.rest.reactions.createForIssueComment({
                 owner, repo, comment_id: commentId, content: 'rocket'
               });
               await github.rest.issues.createComment({
                 owner, repo, issue_number: issueNumber,
-                body: `✨ **Resync Berhasil!** Tiket ini telah diperbarui dengan data terbaru untuk \`${ghsa}\`.`
+                body: `✨ **Resync Berhasil!** Tiket ini telah diperbarui menggunakan pengenal yang tersedia.`
               });
             } catch (e) {}
 
