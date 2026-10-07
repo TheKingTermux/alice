@@ -39,6 +39,32 @@ jobs:
               });
             } catch (e) {}
 
+            // Fungsi pembantu hide komentar usang
+            async function hideOldComments(issueNum, currentCommentId) {
+              try {
+                const comments = await github.paginate(github.rest.issues.listComments, {
+                  owner, repo, issue_number: issueNum, per_page: 100
+                });
+
+                for (const comment of comments) {
+                  const isOldResync = comment.body.trim() === '/resync' || comment.body.trim() === '/resync ';
+                  const isOldErrorBot = comment.body.includes('❌ **Resync Gagal:**');
+                  
+                  if (comment.id !== currentCommentId && (isOldResync || isOldErrorBot)) {
+                    await github.graphql(`
+                      mutation($input: MinimizeCommentInput!) {
+                        minimizeComment(input: $input) {
+                          minimizedComment { isMinimized }
+                        }
+                      }
+                    `, {
+                      input: { subjectId: comment.node_id, classifier: 'OUTDATED' }
+                    });
+                  }
+                }
+              } catch (err) {}
+            }
+
             const issueRes = await github.rest.issues.get({ owner, repo, issue_number: issueNumber });
             const issue = issueRes.data;
             const oldBody = issue.body || '';
@@ -253,3 +279,42 @@ jobs:
             } catch (e) {}
 
             console.log(`✅ Sukses melakukan resync manual pada tiket #${issueNumber}!`);
+
+            // Fungsi pembantu untuk menyembunyikan komentar lama (autohide outdated)
+            async function hideOldComments(issueNum, currentCommentId) {
+              try {
+                // Ambil daftar semua komentar di Isu/PR tersebut
+                const comments = await github.paginate(github.rest.issues.listComments, {
+                  owner, repo, issue_number: issueNum, per_page: 100
+                });
+
+                for (const comment of comments) {
+                  // Jika komentar tersebut adalah perintah /resync lama atau balasan error dari bot sebelumnya
+                  const isOldResync = comment.body.trim() === '/resync' || comment.body.trim() === '/resync ';
+                  const isOldErrorBot = comment.body.includes('❌ **Resync Gagal:**');
+                  
+                  // Jangan sembunyikan komentar yang sedang diproses saat ini
+                  if (comment.id !== currentCommentId && (isOldResync || isOldErrorBot)) {
+                    console.log(`🧹 Menyembunyikan komentar usang ID: ${comment.id}`);
+                    
+                    // Gunakan GitHub GraphQL API untuk minimize/hide komentar
+                    await github.graphql(`
+                      mutation($input: MinimizeCommentInput!) {
+                        minimizeComment(input: $input) {
+                          minimizedComment {
+                            isMinimized
+                          }
+                        }
+                      }
+                    `, {
+                      input: {
+                        subjectId: comment.node_id,
+                        classifier: 'OUTDATED'
+                      }
+                    });
+                  }
+                }
+              } catch (err) {
+                console.log(`⚠️ Gagal menyembunyikan komentar lama: ${err.message}`);
+              }
+            }
