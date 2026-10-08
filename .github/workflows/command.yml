@@ -407,7 +407,7 @@ jobs:
                   }
                 }
 
-                // 2. Biarkan 1 command user PALING BARU (teratas sebelum comment saat ini)
+                // 2. Biarkan 1 command user PALING BARU (teratas)
                 if (isCommand && !isBotAuthor) {
                   if (!latestUserCommandFound) {
                     latestUserCommandFound = true;
@@ -428,6 +428,7 @@ jobs:
                   });
                   console.log(`📦 Mengubah komentar lama ID ${comment.id} menjadi OUTDATED.`);
                 }
-              } catch (err) {
+              }
+            } catch (err) {
               console.log(`⚠️ Gagal membersihkan komentar: ${err.message}`);
             }
