@@ -189,9 +189,9 @@ jobs:
                 ### Affected
                 - **Package:** \`${pkg}\`
                 - **Affected versions:**
-                  ${vulnRange}
+                  - ${vulnRange}
                 - **Patched versions:**
-                  ${patched}
+                  - ${patched}
                 
                 ### References
                 - Advisory: ${advisoryLink}
