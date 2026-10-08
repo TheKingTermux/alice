@@ -378,7 +378,7 @@ jobs:
 
             try {
               const comments = await github.paginate(github.rest.issues.listComments, {
-                owner, repo, issue_number: issueNum, per_page: 100
+                owner, repo, issue_number: issueNumber, per_page: 100
               });
 
               // Urutkan dari yang terbaru ke yang lama
@@ -396,7 +396,7 @@ jobs:
                 // Jangan sentuh komentar command user yang baru saja memicu action ini
                 if (comment.id === userCommandCommentId) continue;
 
-                // Cek apakah komentar ini dikirim oleh bot (menggunakan type 'Bot' atau login berakhiran '[bot]')
+                // Cek apakah komentar ini dikirim oleh bot
                 const isBotAuthor = comment.user.type === 'Bot' || comment.user.login.endsWith('[bot]');
 
                 // Biarkan 1 balasan bot yang PALING BARU (teratas), jadikan outdated sisanya
