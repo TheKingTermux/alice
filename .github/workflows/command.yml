@@ -349,21 +349,9 @@ jobs:
               owner, repo, issue_number: issueNumber, body: '🔓 **Tiket dibuka kembali** atas permintaan melalui perintah `/open`.'
             });
 
-  # ==========================================
-  # 5. JOB: CLEANUP OLD COMMENTS (UNIVERSAL)
-  # ==========================================
-  cleanup-comments:
-    needs: [resync-command, cmd-list, close-ticket, open-ticket]
-    if: always() && (needs.resync-command.result == 'success' || needs.cmd-list.result == 'success' || needs.close-ticket.result == 'success' || needs.open-ticket.result == 'success')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Generate Bot Token
-        id: bot_token
-        uses: actions/create-github-app-token@v3
-        with:
-          client-id: ${{ secrets.BOT_APP_ID }}
-          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
-
+        # ==========================================
+        # 5. JOB: CLEANUP OLD COMMENTS (UNIVERSAL)
+        # ==========================================
       - name: Minimize Outdated Comments
         uses: actions/github-script@v9
         with:
@@ -372,22 +360,45 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const issueNumber = context.payload.issue.number;
-            const currentCommentId = context.payload.comment.id;
+            const userCommandCommentId = context.payload.comment.id;
 
             console.log("🧹 Menjalankan pembersihan komentar lama secara universal...");
 
             try {
+              // Ambil info user login si bot saat ini supaya tahu ID si bot
+              const { data: authUser } = await github.rest.users.getAuthenticated();
+              const botUserId = authUser.id;
+
               const comments = await github.paginate(github.rest.issues.listComments, {
-                owner, repo, issue_number: issueNumber, per_page: 100
+                owner, repo, issue_number: issueNum, per_page: 100
               });
+
+              // Urutkan komentar dari yang paling baru ke yang lama
+              comments.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+              let latestBotResponseFound = false;
 
               for (const comment of comments) {
                 const body = comment.body.trim();
-                const isOldCommand = body.startsWith('/');
+                const isCommand = body.startsWith('/');
                 const botKeywords = ['Resync', 'Daftar Perintah', 'Tiket ditutup', 'Tiket dibuka kembali'];
-                const isOldBotResponse = botKeywords.some(keyword => body.includes(keyword));
-                
-                if (comment.id !== currentCommentId && (isOldCommand || isOldBotResponse)) {
+                const isBotResponse = botKeywords.some(keyword => body.includes(keyword));
+
+                // Jangan sentuh komentar command user yang baru saja memicu action ini
+                if (comment.id === userCommandCommentId) continue;
+
+                // Jika ini adalah balasan bot, biarkan 1 balasan yang PALING BARU (teratas), 
+                // tapi jadikan OUTDATED semua balasan bot yang di bawahnya (lama)
+                if (isBotResponse && comment.user.id === botUserId) {
+                  if (!latestBotResponseFound) {
+                    // Ini adalah balasan bot terbaru, JANGAN di-outdated-kan
+                    latestBotResponseFound = true;
+                    continue;
+                  }
+                }
+
+                // Untuk command lama user atau balasan bot yang sudah tertimbun (lama)
+                if (isCommand || isBotResponse) {
                   await github.graphql(`
                     mutation($input: MinimizeCommentInput!) {
                       minimizeComment(input: $input) {
@@ -397,7 +408,7 @@ jobs:
                   `, {
                     input: { subjectId: comment.node_id, classifier: 'OUTDATED' }
                   });
-                  console.log(`📦 Mengubah komentar ID ${comment.id} menjadi OUTDATED.`);
+                  console.log(`📦 Mengubah komentar lama ID ${comment.id} menjadi OUTDATED.`);
                 }
               }
             } catch (err) {
