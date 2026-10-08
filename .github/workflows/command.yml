@@ -38,7 +38,7 @@ jobs:
             const helpText = `🤖 **Daftar Perintah (Command Center) Akademiya:**
             - \`/resync\`: Melakukan sinkronisasi ulang data kerentanan tiket ini.
             - \`/close\`: Menutup tiket atau PR ini secara otomatis.
-            - \`/open\`: Membuka kembali tiket atau PR ini.
+            - \`/reopen\`: Membuka kembali tiket atau PR ini.
             - \`/cmd\`: Menampilkan daftar bantuan perintah ini.`;
 
             await github.rest.issues.createComment({
@@ -317,7 +317,7 @@ jobs:
   # 4. JOB: OPEN TICKET (/open)
   # ==========================================
   open-ticket:
-    if: github.event.comment.body == '/open' || github.event.comment.body == '/open '
+    if: github.event.comment.body == '/open' || github.event.comment.body == '/reopen '
     runs-on: ubuntu-latest
     outputs:
       executed: "true"
@@ -353,8 +353,8 @@ jobs:
   # 5. JOB: CLEANUP OLD COMMENTS (UNIVERSAL)
   # ==========================================
   cleanup-comments:
-    needs: [resync-command, cmd-list, close-ticket, open-ticket]
-    if: always() && (needs.resync-command.result == 'success' || needs.cmd-list.result == 'success' || needs.close-ticket.result == 'success' || needs.open-ticket.result == 'success')
+    needs: [cmd-list, resync-command, close-ticket, open-ticket]
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Generate Bot Token
@@ -363,6 +363,7 @@ jobs:
         with:
           client-id: ${{ secrets.BOT_APP_ID }}
           private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+
       - name: Minimize Outdated Comments
         uses: actions/github-script@v9
         with:
@@ -376,7 +377,6 @@ jobs:
             console.log("🧹 Menjalankan pembersihan komentar lama secara universal...");
 
             try {
-              // Ambil info user login si bot saat ini supaya tahu ID si bot
               const { data: authUser } = await github.rest.users.getAuthenticated();
               const botUserId = authUser.id;
 
@@ -384,7 +384,7 @@ jobs:
                 owner, repo, issue_number: issueNum, per_page: 100
               });
 
-              // Urutkan komentar dari yang paling baru ke yang lama
+              // Urutkan dari yang terbaru ke yang lama
               comments.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
               let latestBotResponseFound = false;
@@ -392,24 +392,24 @@ jobs:
               for (const comment of comments) {
                 const body = comment.body.trim();
                 const isCommand = body.startsWith('/');
-                const botKeywords = ['Resync', 'Daftar Perintah', 'Tiket ditutup', 'Tiket dibuka kembali'];
+                
+                // Masukkan semua keyword balasan bot agar terdeteksi dengan akurat
+                const botKeywords = ['Resync', 'Daftar Perintah', 'Tiket ditutup', 'Tiket dibuka kembali', 'Berhasil', 'Gagal'];
                 const isBotResponse = botKeywords.some(keyword => body.includes(keyword));
 
                 // Jangan sentuh komentar command user yang baru saja memicu action ini
                 if (comment.id === userCommandCommentId) continue;
 
-                // Jika ini adalah balasan bot, biarkan 1 balasan yang PALING BARU (teratas), 
-                // tapi jadikan OUTDATED semua balasan bot yang di bawahnya (lama)
+                // Biarkan 1 balasan bot yang PALING BARU (teratas), jadikan outdated sisanya
                 if (isBotResponse && comment.user.id === botUserId) {
                   if (!latestBotResponseFound) {
-                    // Ini adalah balasan bot terbaru, JANGAN di-outdated-kan
                     latestBotResponseFound = true;
                     continue;
                   }
                 }
 
-                // Untuk command lama user atau balasan bot yang sudah tertimbun (lama)
-                if (isCommand || isBotResponse) {
+                // Ubah command lama user atau balasan bot lama menjadi OUTDATED
+                if (isCommand || (isBotResponse && comment.user.id === botUserId)) {
                   await github.graphql(`
                     mutation($input: MinimizeCommentInput!) {
                       minimizeComment(input: $input) {
