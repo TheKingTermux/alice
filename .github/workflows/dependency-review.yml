@@ -215,7 +215,8 @@ jobs:
                 - **Package:** ${pkg}
                 - **Affected versions:**
                   - ${vulnRange}
-                - **Patched versions:** ${patched}
+                - **Patched versions:**
+                  - ${patched}
                 
                 ### References
                 - Advisory: ${advisoryLink}
