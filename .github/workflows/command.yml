@@ -1,4 +1,4 @@
-name: On-Demand Resync Command
+name: On-Demand Command Center
 
 on:
   issue_comment:
@@ -10,9 +10,49 @@ permissions:
   pull-requests: write
 
 jobs:
-  resync-single-ticket:
+  # ==========================================
+  # 1. JOB: COMMAND LIST (/cmd)
+  # ==========================================
+  cmd-list:
+    if: github.event.comment.body == '/cmd' || github.event.comment.body == '/cmd '
+    runs-on: ubuntu-latest
+    outputs:
+      executed: "true"
+    steps:
+      - name: Generate Bot Token
+        id: bot_token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+
+      - name: Show Command List
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ steps.bot_token.outputs.token }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issueNumber = context.payload.issue.number;
+
+            const helpText = `🤖 **Daftar Perintah (Command Center) Akademiya:**
+            - \`/resync\`: Melakukan sinkronisasi ulang data kerentanan tiket ini.
+            - \`/close\`: Menutup tiket atau PR ini secara otomatis.
+            - \`/open\`: Membuka kembali tiket atau PR ini.
+            - \`/cmd\`: Menampilkan daftar bantuan perintah ini.`;
+
+            await github.rest.issues.createComment({
+              owner, repo, issue_number: issueNumber, body: helpText
+            });
+            
+  # ==========================================
+  # 2. JOB: RESYNC COMMAND (/resync)
+  # ==========================================
+  resync-command:
     if: github.event.comment.body == '/resync' || github.event.comment.body == '/resync '
     runs-on: ubuntu-latest
+    outputs:
+      executed: "true"
     steps:
       - name: Generate Bot Token
         id: bot_token
@@ -39,31 +79,6 @@ jobs:
               });
             } catch (e) {}
 
-            async function hideOldComments(issueNum, currentCommentId) {
-              try {
-                const comments = await github.paginate(github.rest.issues.listComments, {
-                  owner, repo, issue_number: issueNum, per_page: 100
-                });
-
-                for (const comment of comments) {
-                  const isOldResync = comment.body.trim() === '/resync' || comment.body.trim() === '/resync ';
-                  const isOldCommentBot = comment.body.includes('❌ **Resync Gagal:**') || comment.body.includes('✨ **Resync Berhasil!**');
-                  
-                  if (comment.id !== currentCommentId && (isOldResync || isOldCommentBot)) {
-                    await github.graphql(`
-                      mutation($input: MinimizeCommentInput!) {
-                        minimizeComment(input: $input) {
-                          minimizedComment { isMinimized }
-                        }
-                      }
-                    `, {
-                      input: { subjectId: comment.node_id, classifier: 'OUTDATED' }
-                    });
-                  }
-                }
-              } catch (err) {}
-            }
-
             const issueRes = await github.rest.issues.get({ owner, repo, issue_number: issueNumber });
             const issue = issueRes.data;
             const oldBody = issue.body || '';
@@ -76,7 +91,6 @@ jobs:
             let cveFallback = cveMatch ? cveMatch[1].toUpperCase() : null;
 
             if (!ghsa && (!cveFallback || cveFallback === 'NO CVE')) {
-              await hideOldComments(issueNumber, commentId);
               try {
                 await github.rest.reactions.createForIssueComment({
                   owner, repo, comment_id: commentId, content: '-1'
@@ -89,7 +103,6 @@ jobs:
               return;
             }
 
-            // 2. Deteksi Sumber & Ambil URL Asli dari Body Lama jika Ada
             let sourceUrl = '';
             let sourceNumber = '';
             let sourceType = issue.pull_request ? 'PR' : 'Alert';
@@ -154,7 +167,6 @@ jobs:
             }
 
             if (!advData) {
-              await hideOldComments(issueNumber, commentId);
               try {
                 await github.rest.reactions.createForIssueComment({
                   owner, repo, comment_id: commentId, content: '-1'
@@ -188,7 +200,6 @@ jobs:
               });
             }
 
-            // Fallback jika array kosong
             const vulnRangeFormatted = vulnRangeList.length > 0 ? vulnRangeList.map(r => '- ' + r).join('\n  ') : '- `Unknown`';
             const patchedFormatted = patchedList.length > 0 ? patchedList.map(p => '- ' + p).join('\n  ') : '- `None`';
 
@@ -254,8 +265,6 @@ jobs:
               await github.rest.issues.addLabels({ owner, repo, issue_number: issueNumber, labels: labelsToPush });
             }
 
-            await hideOldComments(issueNumber, commentId);
-
             try {
               await github.rest.reactions.createForIssueComment({
                 owner, repo, comment_id: commentId, content: 'rocket'
@@ -267,3 +276,130 @@ jobs:
             } catch (e) {}
 
             console.log(`✅ Sukses melakukan resync manual pada tiket #${issueNumber}!`);
+
+  # ==========================================
+  # 3. JOB: CLOSE TICKET (/close)
+  # ==========================================
+  close-ticket:
+    if: github.event.comment.body == '/close' || github.event.comment.body == '/close '
+    runs-on: ubuntu-latest
+    outputs:
+      executed: "true"
+    steps:
+      - name: Generate Bot Token
+        id: bot_token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+
+      - name: Close Issue or PR
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ steps.bot_token.outputs.token }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issueNumber = context.payload.issue.number;
+            const isPr = !!context.payload.issue.pull_request;
+
+            if (isPr) {
+              await github.rest.pulls.update({ owner, repo, pull_number: issueNumber, state: 'closed' });
+            } else {
+              await github.rest.issues.update({ owner, repo, issue_number: issueNumber, state: 'closed', state_reason: 'completed' });
+            }
+
+            await github.rest.issues.createComment({
+              owner, repo, issue_number: issueNumber, body: '🔒 **Tiket ditutup** atas permintaan melalui perintah `/close`.'
+            });
+
+  # ==========================================
+  # 4. JOB: OPEN TICKET (/open)
+  # ==========================================
+  open-ticket:
+    if: github.event.comment.body == '/open' || github.event.comment.body == '/open '
+    runs-on: ubuntu-latest
+    outputs:
+      executed: "true"
+    steps:
+      - name: Generate Bot Token
+        id: bot_token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+
+      - name: Open Issue or PR
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ steps.bot_token.outputs.token }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issueNumber = context.payload.issue.number;
+            const isPr = !!context.payload.issue.pull_request;
+
+            if (isPr) {
+              await github.rest.pulls.update({ owner, repo, pull_number: issueNumber, state: 'open' });
+            } else {
+              await github.rest.issues.update({ owner, repo, issue_number: issueNumber, state: 'open' });
+            }
+
+            await github.rest.issues.createComment({
+              owner, repo, issue_number: issueNumber, body: '🔓 **Tiket dibuka kembali** atas permintaan melalui perintah `/open`.'
+            });
+
+  # ==========================================
+  # 5. JOB: CLEANUP OLD COMMENTS (UNIVERSAL)
+  # ==========================================
+  cleanup-comments:
+    needs: [resync-command, cmd-list, close-ticket, open-ticket]
+    if: always() && (needs.resync-command.result == 'success' || needs.cmd-list.result == 'success' || needs.close-ticket.result == 'success' || needs.open-ticket.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate Bot Token
+        id: bot_token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+
+      - name: Minimize Outdated Comments
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ steps.bot_token.outputs.token }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issueNumber = context.payload.issue.number;
+            const currentCommentId = context.payload.comment.id;
+
+            console.log("🧹 Menjalankan pembersihan komentar lama secara universal...");
+
+            try {
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner, repo, issue_number: issueNumber, per_page: 100
+              });
+
+              for (const comment of comments) {
+                const body = comment.body.trim();
+                const isOldCommand = body.startsWith('/');
+                const botKeywords = ['Resync', 'Daftar Perintah', 'Tiket ditutup', 'Tiket dibuka kembali'];
+                const isOldBotResponse = botKeywords.some(keyword => body.includes(keyword));
+                
+                if (comment.id !== currentCommentId && (isOldCommand || isOldBotResponse)) {
+                  await github.graphql(`
+                    mutation($input: MinimizeCommentInput!) {
+                      minimizeComment(input: $input) {
+                        minimizedComment { isMinimized }
+                      }
+                    }
+                  `, {
+                    input: { subjectId: comment.node_id, classifier: 'OUTDATED' }
+                  });
+                  console.log(`📦 Mengubah komentar ID ${comment.id} menjadi OUTDATED.`);
+                }
+              }
+            } catch (err) {
+              console.log(`⚠️ Gagal membersihkan komentar: ${err.message}`);
+            }
