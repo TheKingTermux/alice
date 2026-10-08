@@ -428,4 +428,6 @@ jobs:
                   });
                   console.log(`📦 Mengubah komentar lama ID ${comment.id} menjadi OUTDATED.`);
                 }
-              }
+              } catch (err) {
+              console.log(`⚠️ Gagal membersihkan komentar: ${err.message}`);
+            }
