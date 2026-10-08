@@ -102,15 +102,20 @@ jobs:
                   }
                 }
 
-                // Helper untuk menerapkan data dari API
+                // Helper untuk menerapkan data dari API (Mendukung CVSS v3 & v4)
                 function applyAdvData(advData) {
                   title = advData.summary || title;
                   descText = advData.description || descText;
                   severity = advData.severity ? advData.severity.toUpperCase() : severity;
-                  cvss = advData.cvss && advData.cvss.score ? advData.cvss.score.toString() : cvss;
-                  vectorString = advData.cvss && advData.cvss.vector_string ? advData.cvss.vector_string : vectorString;
                   cve = advData.cve_id || cve;
                   if (advData.html_url) advisoryLink = advData.html_url;
+
+                  if (advData.cvss && advData.cvss.score) cvss = advData.cvss.score.toString();
+                  if (advData.cvss && advData.cvss.vector_string) {
+                    vectorString = advData.cvss.vector_string;
+                  } else if (advData.cvss && advData.cvss.vector) {
+                    vectorString = advData.cvss.vector;
+                  }
 
                   if (advData.cwes && advData.cwes.length > 0) {
                     cweList = advData.cwes.map(c => `- **${c.cwe_id}**: ${c.name}`).join('\n');
@@ -132,25 +137,53 @@ jobs:
 
                 if (severity === 'MEDIUM') severity = 'MODERATE';
 
+                // Parser Vektor CVSS Universal (v3 & v4)
                 function parseCvssVector(vector) {
                   if (!vector || vector === 'N/A') return '*Data metrik belum dipublikasikan oleh repositori database.*';
-                  const map = {
-                    'AV:N': 'Network', 'AV:A': 'Adjacent', 'AV:L': 'Local', 'AV:P': 'Physical',
-                    'AC:L': 'Low', 'AC:H': 'High',
-                    'PR:N': 'None', 'PR:L': 'Low', 'PR:H': 'High',
-                    'UI:N': 'None', 'UI:R': 'Required',
-                    'S:U': 'Unchanged', 'S:C': 'Changed',
-                    'C:N': 'None', 'C:L': 'Low', 'C:H': 'High',
-                    'I:N': 'None', 'I:L': 'Low', 'I:H': 'High',
-                    'A:N': 'None', 'A:L': 'Low', 'A:H': 'High'
+                  const map = { 
+                    'AV:N':'Network', 'AV:A':'Adjacent', 'AV:L':'Local', 'AV:P':'Physical', 
+                    'AC:L':'Low', 'AC:H':'High', 'AC:M':'Medium',
+                    'AT:N':'None', 'AT:P':'Present', 'AT:D':'Deferred',
+                    'PR:N':'None', 'PR:L':'Low', 'PR:H':'High', 
+                    'UI:N':'None', 'UI:R':'Required', 'UI:A':'Active',
+                    'VC:N':'None', 'VC:L':'Low', 'VC:H':'High',
+                    'VI:N':'None', 'VI:L':'Low', 'VI:H':'High',
+                    'VA:N':'None', 'VA:L':'Low', 'VA:H':'High',
+                    'SC:N':'None', 'SC:L':'Low', 'SC:H':'High',
+                    'SI:N':'None', 'SI:L':'Low', 'SI:H':'High',
+                    'SA:N':'None', 'SA:L':'Low', 'SA:H':'High',
+                    'S:U':'Unchanged', 'S:C':'Changed', 
+                    'C:N':'None', 'C:L':'Low', 'C:H':'High', 
+                    'I:N':'None', 'I:L':'Low', 'I:H':'High', 
+                    'A:N':'None', 'A:L':'Low', 'A:H':'High' 
                   };
-                  const parts = vector.replace(/^CVSS:3\.[01]\//, '').split('/');
+
+                  const cleanVector = vector.replace(/^CVSS:[34]\.[01]\//, '');
+                  const parts = cleanVector.split('/');
                   let result = `**Vector:** \`${vector}\`\n`;
+
                   parts.forEach(p => {
                     const [k, v] = p.split(':');
-                    if (map[`${k}:${v}`]) {
-                      const name = k === 'AV' ? 'Attack vector' : k === 'AC' ? 'Attack complexity' : k === 'PR' ? 'Privileges required' : k === 'UI' ? 'User interaction' : k === 'S' ? 'Scope' : k === 'C' ? 'Confidentiality' : k === 'I' ? 'Integrity' : k === 'A' ? 'Availability' : k;
-                      result += `- **${name}:** ${map[`${k}:${v}`]}\n`;
+                    const lookupKey = k + ':' + v;
+                    if (map[lookupKey]) {
+                      let name = k;
+                      if (k === 'AV') name = 'Attack vector';
+                      else if (k === 'AC') name = 'Attack complexity';
+                      else if (k === 'AT') name = 'Attack requirements';
+                      else if (k === 'PR') name = 'Privileges required';
+                      else if (k === 'UI') name = 'User interaction';
+                      else if (k === 'VC') name = 'Vulnerable system confidentiality';
+                      else if (k === 'VI') name = 'Vulnerable system integrity';
+                      else if (k === 'VA') name = 'Vulnerable system availability';
+                      else if (k === 'SC') name = 'Subsequent system confidentiality';
+                      else if (k === 'SI') name = 'Subsequent system integrity';
+                      else if (k === 'SA') name = 'Subsequent system availability';
+                      else if (k === 'S') name = 'Scope';
+                      else if (k === 'C') name = 'Confidentiality';
+                      else if (k === 'I') name = 'Integrity';
+                      else if (k === 'A') name = 'Availability';
+
+                      result += `- **${name}:** ${map[lookupKey]}\n`;
                     }
                   });
                   return result;
@@ -175,7 +208,7 @@ jobs:
                 ### Severity Score
                 ${cvss} / 10
 
-                ### CVSS v3 Base Metrics
+                ### CVSS v3/v4 Base Metrics
                 ${cvssMetrics}
                 
                 ### Identifiers
