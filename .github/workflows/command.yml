@@ -349,9 +349,20 @@ jobs:
               owner, repo, issue_number: issueNumber, body: '🔓 **Tiket dibuka kembali** atas permintaan melalui perintah `/open`.'
             });
 
-        # ==========================================
-        # 5. JOB: CLEANUP OLD COMMENTS (UNIVERSAL)
-        # ==========================================
+  # ==========================================
+  # 5. JOB: CLEANUP OLD COMMENTS (UNIVERSAL)
+  # ==========================================
+  cleanup-comments:
+    needs: [resync-command, cmd-list, close-ticket, open-ticket]
+    if: always() && (needs.resync-command.result == 'success' || needs.cmd-list.result == 'success' || needs.close-ticket.result == 'success' || needs.open-ticket.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate Bot Token
+        id: bot_token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
       - name: Minimize Outdated Comments
         uses: actions/github-script@v9
         with:
