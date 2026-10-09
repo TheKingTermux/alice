@@ -71,7 +71,7 @@ jobs:
             const issueNumber = context.payload.issue.number;
             const commentId = context.payload.comment.id;
   
-            console.log(`⚡ Perintah /resync diterima pada tiket #${issueNumber}! Memulai sinkronisasi kilat...`);
+            console.log("⚡ Perintah /resync diterima pada tiket #" + issueNumber + "! Memulai sinkronisasi kilat...");
   
             try {
               await github.rest.reactions.createForIssueComment({
@@ -90,10 +90,10 @@ jobs:
             const cveMatch = oldBody.match(/\*\*CVE ID:\*\*\s*(CVE-\d{4}-\d+)/i);
             let cveFallback = cveMatch ? cveMatch[1].toUpperCase() : null;
   
-            console.log(`🔍 Hasil ekstraksi awal dari teks tiket -> GHSA: ${ghsa \vert{}\vert{} 'N/A'}, CVE:${cveFallback || 'N/A'}`);
+            console.log("🔍 Hasil ekstraksi awal dari teks tiket -> GHSA: " + (ghsa || 'N/A') + ", CVE: " + (cveFallback || 'N/A'));
   
             if (!ghsa && (!cveFallback || cveFallback === 'NO CVE')) {
-              console.log(`❌ Gagal: Tidak ada GHSA atau CVE ID yang ditemukan.`);
+              console.log("❌ Gagal: Tidak ada GHSA atau CVE ID yang ditemukan.");
               try {
                 await github.rest.reactions.createForIssueComment({
                   owner, repo, comment_id: commentId, content: '-1'
@@ -132,7 +132,7 @@ jobs:
             const osvMatch = oldBody.match(/\*\*Alt ID \(OSV\/Snyk\):\*\*\s*([^\n]+)/i) || [];
             const osvId = osvMatch[1] || 'No Alt ID';
   
-            console.log(`📦 Paket terdeteksi: ${pkg}, Sumber: ${sourceType} (No: ${sourceNumber})`);
+            console.log("📦 Paket terdeteksi: " + pkg + ", Sumber: " + sourceType + " (No: " + sourceNumber + ")");
   
             let title = issue.title;
             let descText = 'No description available.';
@@ -147,50 +147,46 @@ jobs:
   
             let advData = null;
   
-            // ========================================================
-            // TAHAP SCRAPING & LOGGING
-            // ========================================================
             try {
               if (ghsa) {
-                console.log(`🌐 Mengambil data dari Global Advisory API via GHSA: ${ghsa}...`);
+                console.log("🌐 Mengambil data dari Global Advisory API via GHSA: " + ghsa + "...");
                 const advResponse = await github.request('GET /advisories/{ghsa_id}', { ghsa_id: ghsa });
                 advData = advResponse.data;
-                console.log(`📥 Raw Response GHSA API:`, JSON.stringify(advData, null, 2));
+                console.log("📥 Raw Response GHSA API:", JSON.stringify(advData, null, 2));
               } else if (cveFallback && cveFallback !== 'NO CVE') {
-                console.log(`🌐 Mencari data di Global Advisory API via CVE: ${cveFallback}...`);
+                console.log("🌐 Mencari data di Global Advisory API via CVE: " + cveFallback + "...");
                 const searchRes = await github.request('GET /advisories', { cve_id: cveFallback });
                 if (searchRes.data && searchRes.data.length > 0) {
                   advData = searchRes.data[0];
                   ghsa = advData.ghsa_id;
-                  console.log(`📥 Raw Response Search CVE API:`, JSON.stringify(advData, null, 2));
+                  console.log("📥 Raw Response Search CVE API:", JSON.stringify(advData, null, 2));
                 } else {
-                  console.log(`⚠️ Pencarian via CVE tidak mengembalikan hasil.`);
+                  console.log("⚠️ Pencarian via CVE tidak mengembalikan hasil.");
                 }
               }
             } catch (e) {
-              console.log(`⚠️ Gagal fetch Global Advisory API: ${e.message}`);
+              console.log("⚠️ Gagal fetch Global Advisory API: " + e.message);
             }
   
             if (!advData && sourceType === 'Alert' && sourceNumber) {
               try {
-                console.log(`🔄 Mencoba jalur fallback ke Internal Dependabot Alert #${sourceNumber}...`);
+                console.log("🔄 Mencoba jalur fallback ke Internal Dependabot Alert #" + sourceNumber + "...");
                 const alertResponse = await github.request('GET /repos/{owner}/{repo}/dependabot/alerts/{alert_number}', {
                   owner, repo, alert_number: parseInt(sourceNumber)
                 });
                 
-                // Dependabot alert mengembalikan objek security_advisory di dalamnya
                 advData = alertResponse.data.security_advisory;
-                console.log(`📥 Raw Response Internal Dependabot Alert:`, JSON.stringify(alertResponse.data, null, 2));
+                console.log("📥 Raw Response Internal Dependabot Alert:", JSON.stringify(alertResponse.data, null, 2));
   
                 if (alertResponse.data.html_url) advisoryUrl = alertResponse.data.html_url;
                 if (advData && advData.ghsa_id) ghsa = advData.ghsa_id.toUpperCase();
               } catch (err2) {
-                console.log(`❌ Jalur Fallback Internal Gagal: ${err2.message}`);
+                console.log("❌ Jalur Fallback Internal Gagal: " + err2.message);
               }
             }
   
             if (!advData) {
-              console.log(`❌ Metadata total tidak ditemukan dari semua sumber.`);
+              console.log("❌ Metadata total tidak ditemukan dari semua sumber.");
               try {
                 await github.rest.reactions.createForIssueComment({
                   owner, repo, comment_id: commentId, content: '-1'
@@ -203,14 +199,12 @@ jobs:
               return;
             }
   
-            // Ekstraksi nilai dari advData
             title = advData.summary || title;
             descText = advData.description || descText;
             severity = advData.severity ? advData.severity.toUpperCase() : severity;
             cve = advData.cve_id || cve;
             if (advData.html_url) advisoryUrl = advData.html_url;
   
-            // --- BAGIAN CVSS & METRIK ---
             cvss = advData.cvss && advData.cvss.score ? advData.cvss.score.toString() : cvss;
             
             if (advData.cvss && advData.cvss.vector_string) {
@@ -219,15 +213,14 @@ jobs:
               vectorString = advData.cvss.vector;
             }
   
-            console.log(`📊 Hasil Ekstraksi Severity: "${severity}" | CVSS Score: "${cvss}" | Vector: "${vectorString}"`);
+            console.log("📊 Hasil Ekstraksi Severity: \"" + severity + "\" | CVSS Score: \"" + cvss + "\" | Vector: \"" + vectorString + "\"");
   
             if (advData.cwes && advData.cwes.length > 0) {
-              cweList = advData.cwes.map(c => `- **` + c.cwe_id + `**: ` + c.name).join('\n');
+              cweList = advData.cwes.map(c => "- **" + c.cwe_id + "**: " + c.name).join('\n');
             }
   
             if (advData.vulnerabilities && advData.vulnerabilities.length > 0) {
               advData.vulnerabilities.forEach(v => {
-                // Cek jika package cocok atau jika struktur datanya berbeda
                 if (!v.package || v.package.name === pkg || pkg === 'Unknown') {
                   if (v.vulnerable_version_range) vulnRangeList.push('`' + v.vulnerable_version_range + '`');
                   if (v.first_patched_version) patchedList.push('`' + v.first_patched_version + '`');
@@ -266,7 +259,9 @@ jobs:
               let result = '**Vector:** `' + vector + '`\n';
   
               parts.forEach(p => { 
-                const [k, v] = p.split(':'); 
+                const kv = p.split(':'); 
+                const k = kv[0];
+                const v = kv[1];
                 const lookupKey = k + ':' + v;
                 if (map[lookupKey]) { 
                   let name = k;
@@ -292,7 +287,6 @@ jobs:
               return result;
             }
             const cvssMetrics = parseCvssVector(vectorString);
-            // ----------------------------------------
   
             let newBody = '🚨 **Sumber Peringatan:** [Dependabot Alert #' + (sourceNumber || issueNumber) + '](' + sourceUrl + ')\n\n' +
               '### Description\n' + descText + '\n\n' +
@@ -348,7 +342,7 @@ jobs:
               });
             } catch (e) {}
   
-            console.log(`✅ Sukses melakukan resync manual pada tiket #${issueNumber}!`);
+            console.log("✅ Sukses melakukan resync manual pada tiket #" + issueNumber + "!");
 
   # ==========================================
   # 3. JOB: CLOSE TICKET (/close)
