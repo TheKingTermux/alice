@@ -34,6 +34,17 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const issueNumber = context.payload.issue.number;
+            const authorAssociation = context.payload.comment.author_association;
+
+            const allowedRoles = ['OWNER', 'MEMBER', 'COLLABORATOR'];
+            if (!allowedRoles.includes(authorAssociation)) {
+              console.log("❌ Ditolak: User " + context.payload.comment.user.login + " bukan kolaborator.");
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: issueNumber,
+                body: '❌ **Akses Ditolak:** Perintah `/cmd` hanya dapat dijalankan oleh Owner atau Kolaborator repositori.'
+              });
+              return;
+            }
 
             const helpText = `🤖 **Daftar Perintah (Command Center) Akademiya:**
             - \`/resync\`: Melakukan sinkronisasi ulang data kerentanan tiket ini.
@@ -72,6 +83,17 @@ jobs:
             const repo = context.repo.repo;
             const issueNumber = context.payload.issue.number;
             const commentId = context.payload.comment.id;
+            const authorAssociation = context.payload.comment.author_association;
+
+            const allowedRoles = ['OWNER', 'MEMBER', 'COLLABORATOR'];
+            if (!allowedRoles.includes(authorAssociation)) {
+              console.log("❌ Ditolak: User " + context.payload.comment.user.login + " bukan kolaborator.");
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: issueNumber,
+                body: '❌ **Akses Ditolak:** Perintah `/resync` hanya dapat dijalankan oleh Owner atau Kolaborator repositori.'
+              });
+              return;
+            }
   
             console.log("⚡ Perintah /resync diterima pada tiket #" + issueNumber + "! Memulai sinkronisasi kilat...");
   
@@ -383,6 +405,17 @@ jobs:
             const repo = context.repo.repo;
             const issueNumber = context.payload.issue.number;
             const commentId = context.payload.comment.id;
+            const authorAssociation = context.payload.comment.author_association;
+
+            const allowedRoles = ['OWNER', 'MEMBER', 'COLLABORATOR'];
+            if (!allowedRoles.includes(authorAssociation)) {
+              console.log("❌ Ditolak: User " + context.payload.comment.user.login + " bukan kolaborator.");
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: issueNumber,
+                body: '❌ **Akses Ditolak:** Perintah `/lock` hanya dapat dijalankan oleh Owner atau Kolaborator repositori.'
+              });
+              return;
+            }
 
             try {
               await github.rest.reactions.createForIssueComment({
@@ -434,6 +467,17 @@ jobs:
             const repo = context.repo.repo;
             const issueNumber = context.payload.issue.number;
             const commentId = context.payload.comment.id;
+            const authorAssociation = context.payload.comment.author_association;
+
+            const allowedRoles = ['OWNER', 'MEMBER', 'COLLABORATOR'];
+            if (!allowedRoles.includes(authorAssociation)) {
+              console.log("❌ Ditolak: User " + context.payload.comment.user.login + " bukan kolaborator.");
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: issueNumber,
+                body: '❌ **Akses Ditolak:** Perintah `/unlock` hanya dapat dijalankan oleh Owner atau Kolaborator repositori.'
+              });
+              return;
+            }
 
             try {
               await github.rest.reactions.createForIssueComment({
@@ -485,6 +529,17 @@ jobs:
             const repo = context.repo.repo;
             const issueNumber = context.payload.issue.number;
             const isPr = !!context.payload.issue.pull_request;
+            const authorAssociation = context.payload.comment.author_association;
+
+            const allowedRoles = ['OWNER', 'MEMBER', 'COLLABORATOR'];
+            if (!allowedRoles.includes(authorAssociation)) {
+              console.log("❌ Ditolak: User " + context.payload.comment.user.login + " bukan kolaborator.");
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: issueNumber,
+                body: '❌ **Akses Ditolak:** Perintah `/close` hanya dapat dijalankan oleh Owner atau Kolaborator repositori.'
+              });
+              return;
+            }
 
             if (isPr) {
               await github.rest.pulls.update({ owner, repo, pull_number: issueNumber, state: 'closed' });
@@ -521,6 +576,17 @@ jobs:
             const repo = context.repo.repo;
             const issueNumber = context.payload.issue.number;
             const isPr = !!context.payload.issue.pull_request;
+            const authorAssociation = context.payload.comment.author_association;
+
+            const allowedRoles = ['OWNER', 'MEMBER', 'COLLABORATOR'];
+            if (!allowedRoles.includes(authorAssociation)) {
+              console.log("❌ Ditolak: User " + context.payload.comment.user.login + " bukan kolaborator.");
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: issueNumber,
+                body: '❌ **Akses Ditolak:** Perintah `/open` hanya dapat dijalankan oleh Owner atau Kolaborator repositori.'
+              });
+              return;
+            }
 
             if (isPr) {
               await github.rest.pulls.update({ owner, repo, pull_number: issueNumber, state: 'open' });
@@ -573,7 +639,7 @@ jobs:
                 const body = comment.body.trim();
                 const isCommand = body.startsWith('/');
                 
-                const botKeywords = ['Resync', 'Daftar Perintah', 'Tiket ditutup', 'Tiket dibuka kembali', 'Kolaborasi Terbatas', 'Kolaborasi Dibuka', 'Berhasil', 'Gagal'];
+                const botKeywords = ['Resync', 'Daftar Perintah', 'Tiket ditutup', 'Tiket dibuka kembali', 'Kolaborasi Terbatas', 'Kolaborasi Dibuka', 'Akses Ditolak', 'Berhasil', 'Gagal'];
                 const isBotResponse = botKeywords.some(keyword => body.includes(keyword));
 
                 if (comment.id === userCommandCommentId) continue;
