@@ -234,12 +234,12 @@ jobs:
                 }
               });
             }
-
+  
             const vulnRangeFormatted = vulnRangeList.length > 0 ? vulnRangeList.map(r => '- ' + r).join('\n  ') : '- `Unknown`';
             const patchedFormatted = patchedList.length > 0 ? patchedList.map(p => '- ' + p).join('\n  ') : '- `None`';
-
+  
             if (severity === 'MEDIUM') severity = 'MODERATE';
-
+  
             function parseCvssVector(vector) {
               if (!vector || vector === 'N/A') return '*Data metrik belum dipublikasikan oleh repositori database.*';
               
@@ -260,11 +260,11 @@ jobs:
                 'I:N':'None', 'I:L':'Low', 'I:H':'High', 
                 'A:N':'None', 'A:L':'Low', 'A:H':'High' 
               };
-
+  
               const cleanVector = vector.replace(/^CVSS:[34]\.[01]\//, '');
               const parts = cleanVector.split('/');
               let result = '**Vector:** `' + vector + '`\n';
-
+  
               parts.forEach(p => { 
                 const [k, v] = p.split(':'); 
                 const lookupKey = k + ':' + v;
@@ -285,7 +285,7 @@ jobs:
                   else if (k === 'C') name = 'Confidentiality';
                   else if (k === 'I') name = 'Integrity';
                   else if (k === 'A') name = 'Availability';
-
+  
                   result += '- **' + name + ':** ' + map[lookupKey] + '\n'; 
                 } 
               });
@@ -293,7 +293,7 @@ jobs:
             }
             const cvssMetrics = parseCvssVector(vectorString);
             // ----------------------------------------
-
+  
             let newBody = '🚨 **Sumber Peringatan:** [Dependabot Alert #' + (sourceNumber || issueNumber) + '](' + sourceUrl + ')\n\n' +
               '### Description\n' + descText + '\n\n' +
               '### Severity Check\n' +
@@ -317,27 +317,27 @@ jobs:
               '- Alert Link: ' + sourceUrl + '\n\n' +
               '---\n' +
               '_Auto-generated from command /resync._';
-
+  
             await github.rest.issues.update({
               owner, repo, issue_number: issueNumber, title: title, body: newBody
             });
-
+  
             let targetSeverityLabel = severity === 'CRITICAL' ? 'Critical' : severity === 'HIGH' ? 'High' : severity === 'MODERATE' ? 'Moderate' : 'Low';
             const severityPool = ['Low', 'Moderate', 'High', 'Critical'];
             let wrongSeverityLabels = currentLabels.filter(l => severityPool.includes(l) && l !== targetSeverityLabel);
-
+  
             for (const wrongLabel of wrongSeverityLabels) {
               try { await github.rest.issues.removeLabel({ owner, repo, issue_number: issueNumber, name: wrongLabel }); } catch (e) {}
             }
-
+  
             let labelsToPush = [];
             if (!currentLabels.includes(targetSeverityLabel)) labelsToPush.push(targetSeverityLabel);
             if (issue.state === 'closed' && !currentLabels.includes('Fixed')) labelsToPush.push('Fixed');
-
+  
             if (labelsToPush.length > 0) {
               await github.rest.issues.addLabels({ owner, repo, issue_number: issueNumber, labels: labelsToPush });
             }
-
+  
             try {
               await github.rest.reactions.createForIssueComment({
                 owner, repo, comment_id: commentId, content: 'rocket'
@@ -347,7 +347,7 @@ jobs:
                 body: '✨ **Resync Berhasil!** Tiket ini telah diperbarui menggunakan pengenal yang tersedia.'
               });
             } catch (e) {}
-
+  
             console.log(`✅ Sukses melakukan resync manual pada tiket #${issueNumber}!`);
 
   # ==========================================
