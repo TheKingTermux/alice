@@ -51,16 +51,23 @@ jobs:
                 const alertUrl = alert.html_url; 
                 const pkg = alert.dependency.package.name;
                 
-                // Ambil GHSA atau fallback ke CVE dari objek alert
                 const advisoryObj = alert.security_advisory || {};
                 let ghsa = advisoryObj.ghsa_id ? advisoryObj.ghsa_id.toUpperCase() : null;
                 let cve = advisoryObj.cve_id ? advisoryObj.cve_id.toUpperCase() : 'No CVE';
 
                 console.log(`\n⏳ Memproses Alert #${alertNumber} - ${pkg} (GHSA: ${ghsa || 'N/A'}, CVE: ${cve})...`);
 
-                // 1. Set Nilai Awal dari Bawaan Alert
                 let title = advisoryObj.summary || `Security Advisory: ${pkg}`;
-                let descText = advisoryObj.description || 'No description available.';
+                let rawDesc = advisoryObj.description || 'No description available.';
+                
+                // --- FUNGSI PEMBERSIH TEKS (MEMBERSIHKAN SIMBOL [+] DAN [-] DARI DEPENDABOT) ---
+                let descText = rawDesc
+                  .replace(/^\[[+-]\]\s*/gm, '')
+                  .replace(/\[\/\+\]/g, '')
+                  .replace(/\[\-\]/g, '')
+                  .replace(/\[\/\-\]/g, '')
+                  .trim();
+
                 let severity = advisoryObj.severity ? advisoryObj.severity.toUpperCase() : 'UNKNOWN';
                 let cvss = 'N/A';
                 let vectorString = 'N/A';
@@ -70,9 +77,6 @@ jobs:
                 let patched = '- `None`';
                 let advisoryLink = ghsa ? `https://github.com/advisories/${ghsa}` : (cve !== 'No CVE' ? `https://nvd.nist.gov/vuln/detail/${cve}` : alertUrl);
 
-                // ==========================================
-                // 2. FETCH KE API GITHUB ADVISORY (DENGAN FALLBACK GHSA -> CVE)
-                // ==========================================
                 let advFetched = false;
                 try {
                   if (ghsa) {
@@ -85,7 +89,6 @@ jobs:
                   console.log(`⚠️ Global API gagal via GHSA (${e.message}). Mencoba fallback via CVE...`);
                 }
 
-                // Jika GHSA gagal atau kosong, coba cari via CVE ID di Global Database
                 if (!advFetched && cve !== 'No CVE') {
                   try {
                     console.log(`🔍 Mencari metadata via CVE ID: ${cve}...`);
@@ -102,19 +105,41 @@ jobs:
                   }
                 }
 
-                // Helper untuk menerapkan data dari API (Mendukung CVSS v3 & v4)
                 function applyAdvData(advData) {
                   title = advData.summary || title;
-                  descText = advData.description || descText;
+                  let rawApiDesc = advData.description || descText;
+                  
+                  // Bersihkan juga deskripsi dari API Global jika ada format aneh
+                  descText = rawApiDesc
+                    .replace(/^\[[+-]\]\s*/gm, '')
+                    .replace(/\[\/\+\]/g, '')
+                    .replace(/\[\-\]/g, '')
+                    .replace(/\[\/\-\]/g, '')
+                    .trim();
+
                   severity = advData.severity ? advData.severity.toUpperCase() : severity;
                   cve = advData.cve_id || cve;
                   if (advData.html_url) advisoryLink = advData.html_url;
 
-                  if (advData.cvss && advData.cvss.score) cvss = advData.cvss.score.toString();
-                  if (advData.cvss && advData.cvss.vector_string) {
-                    vectorString = advData.cvss.vector_string;
-                  } else if (advData.cvss && advData.cvss.vector) {
-                    vectorString = advData.cvss.vector;
+                  // --- LOGIKA CVSS YANG BARU (Mendukung v4, v3, & advData.cvss) ---
+                  let targetCvssObj = null;
+                  if (advData.cvss_severities) {
+                    if (advData.cvss_severities.cvss_v4 && advData.cvss_severities.cvss_v4.score > 0) {
+                      targetCvssObj = advData.cvss_severities.cvss_v4;
+                    } else if (advData.cvss_severities.cvss_v3 && advData.cvss_severities.cvss_v3.score > 0) {
+                      targetCvssObj = advData.cvss_severities.cvss_v3;
+                    }
+                  }
+                  if (!targetCvssObj && advData.cvss) {
+                    targetCvssObj = advData.cvss;
+                  }
+
+                  cvss = targetCvssObj && targetCvssObj.score ? targetCvssObj.score.toString() : cvss;
+                  
+                  if (targetCvssObj && targetCvssObj.vector_string) {
+                    vectorString = targetCvssObj.vector_string;
+                  } else if (targetCvssObj && targetCvssObj.vector) {
+                    vectorString = targetCvssObj.vector;
                   }
 
                   if (advData.cwes && advData.cwes.length > 0) {
@@ -125,7 +150,7 @@ jobs:
                     let ranges = [];
                     let fixes = [];
                     advData.vulnerabilities.forEach(v => {
-                      if (v.package && v.package.name === pkg) {
+                      if (!v.package || v.package.name === pkg || pkg === 'Unknown') {
                         if (v.vulnerable_version_range) ranges.push('- `' + v.vulnerable_version_range + '`');
                         if (v.first_patched_version) fixes.push('- `' + v.first_patched_version + '`');
                       }
@@ -137,7 +162,6 @@ jobs:
 
                 if (severity === 'MEDIUM') severity = 'MODERATE';
 
-                // Parser Vektor CVSS Universal (v3 & v4)
                 function parseCvssVector(vector) {
                   if (!vector || vector === 'N/A') return '*Data metrik belum dipublikasikan oleh repositori database.*';
                   const map = { 
@@ -163,7 +187,9 @@ jobs:
                   let result = `**Vector:** \`${vector}\`\n`;
 
                   parts.forEach(p => {
-                    const [k, v] = p.split(':');
+                    const kv = p.split(':');
+                    const k = kv[0];
+                    const v = kv[1];
                     const lookupKey = k + ':' + v;
                     if (map[lookupKey]) {
                       let name = k;
@@ -191,9 +217,6 @@ jobs:
 
                 const cvssMetrics = parseCvssVector(vectorString);
 
-                // ==========================================
-                // 3. RANGKAI ULANG BODY
-                // ==========================================
                 const body = `🚨 **Sumber Peringatan:** [Dependabot Alert #${alertNumber}](${alertUrl})
 
                 ### Description
@@ -207,7 +230,7 @@ jobs:
                 
                 ### Severity Score
                 ${cvss} / 10
-
+                
                 ### CVSS v3/v4 Base Metrics
                 ${cvssMetrics}
                 
@@ -228,6 +251,7 @@ jobs:
                 
                 ### References
                 - Advisory: ${advisoryLink}
+                - Alert Link: ${alertUrl}
                 
                 ---
                 _Auto-generated from ${botType}._`;
@@ -237,11 +261,7 @@ jobs:
                 else if (severity === 'HIGH') targetSeverityLabel = 'High';
                 else if (severity === 'MODERATE') targetSeverityLabel = 'Moderate';
 
-                // ==========================================
-                // 4. MEMBUAT ATAU MEMPERBARUI ISSUE
-                // ==========================================
                 const existing = issues.find(i => i.body && i.body.includes(alertUrl));
-
                 const defaultLabels = ['Security', 'Auto Create Issues', 'dependencies', 'Auto Sync', 'Auto Updated', 'Auto Re-Open', targetSeverityLabel];
 
                 if (!existing) {
