@@ -111,34 +111,30 @@ jobs:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
           SUCCESS_JSON=$(cat success_payload.json)
-          REPO_NAME="${{ github.repository }}"
           
-          # Buat daftar list teks markdown untuk embed Discord
-          FIELDS=$(jq -n --argjson items "$SUCCESS_JSON" '[
-            {
-              name: "🏰 Sektor Repositori",
-              value: ("`" + $items[0].branch + "`"),
-              inline: false
-            },
-            {
-              name: "✨ Melodi Alur Kerja yang Berhasil (" + ($items | length | tostring) + " Tugas)",
-              value: [($items[] | "• **\(.name)** (Pertemuan #\(.run_number)) - [Lihat Log](\(.url))")] | join("\n"),
-              inline: false
-            }
-          ]')
-
           jq -n \
+            --argjson items "$SUCCESS_JSON" \
             --arg title "♫~ Ah, keharmonisan yang indah..." \
             --arg desc "Semuanya berjalan dengan sangat damai, bagai melodi yang mengalun tanpa cela... Alur kerja kelompokmu menari dengan sempurna hari ini.~" \
             --arg color "16764142" \
             --arg footer "🕊️ 'Tidurlah dengan damai, biarkan malam menghapus air matamu...'" \
-            --argjson fields "$FIELDS" \
             '{
               embeds: [{
                 title: $title,
                 description: $desc,
                 color: ($color | tonumber),
-                fields: $fields,
+                fields: [
+                  {
+                    name: "🏰 Sektor Repositori",
+                    value: ("`" + $items[0].branch + "`"),
+                    inline: false
+                  },
+                  {
+                    name: ("✨ Melodi Alur Kerja yang Berhasil (" + ($items | length | tostring) + " Tugas)"),
+                    value: [($items[] | "• **\(.name)** (Pertemuan #\(.run_number)) - [Lihat Log](\(.url))")] | join("\n"),
+                    inline: false
+                  }
+                ],
                 footer: { text: $footer }
               }]
             }' > discord_success.json
@@ -156,31 +152,29 @@ jobs:
         run: |
           FAIL_JSON=$(cat fail_payload.json)
           
-          FIELDS=$(jq -n --argjson items "$FAIL_JSON" '[
-            {
-              name: "🗺️ Sektor Repositori Target",
-              value: ("`" + $items[0].branch + "`"),
-              inline: false
-            },
-            {
-              name: "🚨 Operasi Sistem yang Rusak (" + ($items | length | tostring) + " Gangguan)",
-              value: [($items[] | "• **\(.name)** (Evaluasi #\(.run_number)) - [Investigasi](\(.url))")] | join("\n"),
-              inline: false
-            }
-          ]')
-
           jq -n \
+            --argjson items "$FAIL_JSON" \
             --arg title "🩸 Laporan Kegagalan Massal: House of the Hearth" \
             --arg desc "Ada gangguan serius pada sistem kita. Beberapa alur kerja gagal menyelesaikan tugasnya secara bersamaan di bawah pengawasanku. Evaluasi segera!" \
             --arg color "10038562" \
             --arg footer "🐦‍⬛ 'Di dalam kegelapan, kedisiplinan adalah satu-satunya cahaya yang tersisa.'" \
-            --argjson fields "$FIELDS" \
             '{
               embeds: [{
                 title: $title,
                 description: $desc,
                 color: ($color | tonumber),
-                fields: $fields,
+                fields: [
+                  {
+                    name: "🗺️ Sektor Repositori Target",
+                    value: ("`" + $items[0].branch + "`"),
+                    inline: false
+                  },
+                  {
+                    name: ("🚨 Operasi Sistem yang Rusak (" + ($items | length | tostring) + " Gangguan)"),
+                    value: [($items[] | "• **\(.name)** (Evaluasi #\(.run_number)) - [Investigasi](\(.url))")] | join("\n"),
+                    inline: false
+                  }
+                ],
                 footer: { text: $footer }
               }]
             }' > discord_fail.json
