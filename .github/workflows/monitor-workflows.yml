@@ -1,4 +1,5 @@
 name: Monitor Semua Workflow
+
 on:
   workflow_run:
     workflows: 
@@ -18,129 +19,171 @@ permissions:
   actions: read
 
 jobs:
-  kirim-notifikasi-discord:
+  proses-dan-kirim-notifikasi:
+  
+    # PENGAMAN UTAMA: Mencegah workflow ini memicu dirinya sendiri (Infinite Loop)
+    if: github.event.workflow_run.name != 'Monitor Semua Workflow'
+    
     runs-on: ubuntu-latest
     steps:
-      - name: Atur Format Notifikasi Berdasarkan Karakter Fatui
-        id: format
+      # ==========================================
+      # STEP 1: CHECK DAN PISAHKAN SEMUA YANG JALAN & ERROR
+      # ==========================================
+      - name: Analisis dan Kelompokkan Status Workflow
+        id: analyzer
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const currentRunId = context.payload.workflow_run.id;
+
+            console.log("🔍 Memindai seluruh riwayat workflow run yang selesai dalam beberapa detik terakhir...");
+
+            // Ambil daftar run workflow terbaru yang berstatus 'completed'
+            const runsRes = await github.rest.actions.listWorkflowRunsForRepo({
+              owner,
+              repo,
+              per_page: 25,
+              status: 'completed'
+            });
+
+            // Cari run yang selesai dalam rentang waktu 60 detik terakhir agar bisa digabung
+            const now = new Date();
+            const recentRuns = runsRes.data.workflow_runs.filter(run => {
+              // Abaikan workflow monitor ini sendiri
+              if (run.name === 'Monitor Semua Workflow') return false;
+              
+              const updatedAt = new Date(run.updated_at);
+              const diffSeconds = (now - updatedAt) / 1000;
+              return diffSeconds <= 60; // Dikelompokkan jika selesai dalam waktu 60 detik terakhir
+            });
+
+            console.log(`✨ Ditemukan ${recentRuns.length} workflow yang baru saja selesai bersamaan.`);
+
+            let successList = [];
+            let failList = [];
+
+            for (const run of recentRuns) {
+              const wfName = run.name;
+              const conclusion = run.conclusion; // success, failure, cancelled, skipped, dll.
+              const runNum = run.run_number;
+              const logUrl = run.html_url;
+              const branch = run.head_branch || 'main';
+              const eventType = run.event;
+
+              if (conclusion === 'skipped' || conclusion === 'cancelled') {
+                continue; // Lewatkan yang di-skip atau dibatalkan
+              }
+
+              const item = {
+                name: wfName,
+                run_number: runNum,
+                url: logUrl,
+                branch: branch,
+                event: eventType
+              };
+
+              if (conclusion === 'success') {
+                successList.push(item);
+              } else {
+                failList.push(item);
+              }
+            }
+
+            console.log(`✅ Berhasil dikelompokkan -> Sukses: ${successList.length}, Gagal: ${failList.length}`);
+
+            // Simpan ke output agar bisa dibaca di step berikutnya
+            core.setOutput('has_success', successList.length > 0 ? 'true' : 'false');
+            core.setOutput('has_fail', failList.length > 0 ? 'true' : 'false');
+            
+            // Simpan sebagai string JSON untuk diproses via jq di step selanjutnya
+            fs = require('fs');
+            fs.writeFileSync('success_payload.json', JSON.stringify(successList));
+            fs.writeFileSync('fail_payload.json', JSON.stringify(failList));
+
+      # ==========================================
+      # STEP 2: KIRIM NOTIFIKASI YANG JALAN NORMAL (SUKSES)
+      # ==========================================
+      - name: Kirim Rangkuman Sukses ke Columbina
+        if: steps.analyzer.outputs.has_success == 'true'
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
-          CONCLUSION="${{ github.event.workflow_run.conclusion }}"
-          TRIGGER_EVENT="${{ github.event.workflow_run.event }}"
-          WF_NAME_RAW="${{ github.event.workflow_run.name }}"
-
-          # =================================================================
-          # FILTER ANTI-SPAM: JIKA STATUSNYA "SKIPPED", BATALKAN KIRIM NOTIFIKASI
-          # =================================================================
-          if [ "$CONCLUSION" = "skipped" ]; then
-            echo "🚫 Workflow '$WF_NAME_RAW' dilewati (skipped). Menghentikan proses pengiriman notifikasi..."
-            echo "SHOULD_SEND=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          echo "SHOULD_SEND=true" >> $GITHUB_OUTPUT
-
-          # Pengaman nama cabang branch jika kosong (seperti pada event schedule)
-          BRANCH_NAME="${{ github.event.workflow_run.head_branch }}"
-          if [ -z "$BRANCH_NAME" ] || [ "$BRANCH_NAME" = "null" ]; then
-            BRANCH_NAME="main"
-          fi
-
-          REPO_NAME_RAW="${{ github.repository }}"
-          REPO_URL_COMPLETE="${{ github.server_url }}/$REPO_NAME_RAW/tree/$BRANCH_NAME"
-          WF_LOG_URL_RAW="${{ github.event.workflow_run.html_url }}"
-          RUN_NUM="${{ github.event.workflow_run.run_number }}"
-
-          if [ "$CONCLUSION" = "success" ]; then
-            # =================================================================
-            # VARIANT 1: --- STRUKTUR EMBED FIELDS COLUMBINA CHAN (SUKSES) ---
-            # =================================================================
-            echo "TARGET_WEBHOOK=${{ secrets.DISCORD_WEBHOOK }}" >> $GITHUB_OUTPUT
-            echo "TITLE=♫~ Ah, keharmonisan yang indah..." >> $GITHUB_OUTPUT
-            echo "DESC=Semuanya berjalan dengan sangat damai, bagai melodi yang mengalun tanpa cela... Alur kerjamu menari dengan sempurna hari ini.~" >> $GITHUB_OUTPUT
-            echo "COLOR=16764142" >> $GITHUB_OUTPUT
-            echo "FOOTER=🕊️ 'Tidurlah dengan damai, biarkan malam menghapus air matamu...'" >> $GITHUB_OUTPUT
-            
-            if [ "$TRIGGER_EVENT" = "schedule" ]; then POETIC_TRIGGER="⏰ Takdir waktu yang berputar rutin (Penjadwalan Otomatis)";
-            elif [ "$TRIGGER_EVENT" = "workflow_dispatch" ]; then POETIC_TRIGGER="🖐️ Sentuhan jemarimu yang menggerakkan takdir (Eksekusi Manual)";
-            elif [ "$TRIGGER_EVENT" = "repository_dispatch" ]; then POETIC_TRIGGER="🔄 Alunan lagu lama yang terpaksa dimainkan ulang dari awal setelah sempat terputus (Otomatis Coba Lagi 5 Menit)";
-            elif [ "$TRIGGER_EVENT" = "push" ]; then POETIC_TRIGGER="⚔️ Goresan tinta baru yang dikirimkan ke dalam takdir (Push Code)";
-            elif [ "$TRIGGER_EVENT" = "pull_request" ] || [ "$TRIGGER_EVENT" = "pull_request_review" ] || [ "$TRIGGER_EVENT" = "pull_request_review_comment" ]; then POETIC_TRIGGER="📜 Lembaran kontrak kerja sama yang diajukan ke pengadilan (Pull Request)";
-            elif [ "$TRIGGER_EVENT" = "issues" ] || [ "$TRIGGER_EVENT" = "issue_comment" ]; then POETIC_TRIGGER="🏛️ Suara kesaksian publik yang menggema di ruang sidang (Issues/Comments)";
-            else POETIC_TRIGGER="🍃 Bisikan tak dikenal dari dimensi lain ($TRIGGER_EVENT)"; fi
-
-            FULL_TRIGGER_TEXT="$POETIC_TRIGGER"$'\n'"*(Pertunjukan ke-$RUN_NUM)*"
-
-            jq -n \
-              --arg repo "[$REPO_NAME_RAW ($BRANCH_NAME)]($REPO_URL_COMPLETE)" \
-              --arg wf "$WF_NAME_RAW" \
-              --arg conc "$CONCLUSION" \
-              --arg trig "$FULL_TRIGGER_TEXT" \
-              --arg log "[Lihat lembaran catatan takdir di sini...]($WF_LOG_URL_RAW)" \
-              '[
-                { name: "🏰 Tempat Melodi Bergema", value: $repo, inline: false },
-                { name: "✨ Melodi yang Dimainkan", value: ("`" + $wf + "`"), inline: true },
-                { name: "👁️ Catatan Akhir", value: ("`" + $conc + "`"), inline: true },
-                { name: "🍃 Bisikan Angin Pemicu", value: $trig, inline: false },
-                { name: "🔗 Intip Takdir di Sini", value: $log, inline: false }
-              ]' > fields_payload.json
-            
-          else
-            # =================================================================
-            # VARIANT 2: --- STRUKTUR EMBED FIELDS ARLECCHINO FATHER (GAGAL) ---
-            # =================================================================
-            echo "TARGET_WEBHOOK=${{ secrets.DISCORD_WEBHOOK_FAIL }}" >> $GITHUB_OUTPUT
-            echo "TITLE=🩸 Laporan Kegagalan: House of the Hearth" >> $GITHUB_OUTPUT
-            echo "DESC=Ada gangguan serius pada sistem kita. Salah satu alur kerja gagal menyelesaikan tugasnya di bawah pengawasanku. Setiap kesalahan harus dievaluasi dengan tegas. Jangan biarkan kelalaian konyol ini terulang kembali!" >> $GITHUB_OUTPUT
-            echo "COLOR=10038562" >> $GITHUB_OUTPUT
-            echo "FOOTER=🐦‍⬛ 'Di dalam kegelapan, kedisiplinan adalah satu-satunya cahaya yang tersisa.'" >> $GITHUB_OUTPUT
-            
-            if [ "$TRIGGER_EVENT" = "schedule" ]; then POETIC_TRIGGER="⚙️ Siklus mesin rutin yang terjadwal otomatis";
-            elif [ "$TRIGGER_EVENT" = "workflow_dispatch" ]; then POETIC_TRIGGER="♟️ Perintah manual langsung darimu (Bypass Prosedur)";
-            elif [ "$TRIGGER_EVENT" = "repository_dispatch" ]; then POETIC_TRIGGER="⏳ Sistem mencoba bangkit kembali dari kegerhanaan (Otomatis Coba Lagi 5 Menit)";
-            elif [ "$TRIGGER_EVENT" = "push" ]; then POETIC_TRIGGER="📦 Pembaruan kode masuk terdeteksi (Push Code)";
-            elif [ "$TRIGGER_EVENT" = "pull_request" ] || [ "$TRIGGER_EVENT" = "pull_request_review" ] || [ "$TRIGGER_EVENT" = "pull_request_review_comment" ]; then POETIC_TRIGGER="⛓️ Cacat pengerjaan pada draf pengajuan kontrak baru (Pull Request)";
-            elif [ "$TRIGGER_EVENT" = "issues" ] || [ "$TRIGGER_EVENT" = "issue_comment" ]; then POETIC_TRIGGER="🛑 Pelanggaran tata tertib diskusi atau sengketa laporan berkas (Issues/Comments)";
-            else POETIC_TRIGGER="⛓️ Intervensi ilegal dari faktor luar ($TRIGGER_EVENT)"; fi
-
-            FULL_TRIGGER_TEXT="$POETIC_TRIGGER"$'\n'"*(Evaluasi ke-$RUN_NUM)*"
-
-            jq -n \
-              --arg repo "[$REPO_NAME_RAW ($BRANCH_NAME)]($REPO_URL_COMPLETE)" \
-              --arg wf "$WF_NAME_RAW" \
-              --arg conc "$CONCLUSION" \
-              --arg trig "$FULL_TRIGGER_TEXT" \
-              --arg log "[Buka berkas investigasi kerusakan...]($WF_LOG_URL_RAW)" \
-              '[
-                { name: "🗺️ Sektor Repositori Target", value: $repo, inline: false },
-                { name: "🛠️ Operasi Sistem yang Rusak", value: ("`" + $wf + "`"), inline: true },
-                { name: "🚨 Status Kegagalan", value: ("`" + $conc + "`"), inline: true },
-                { name: "⛓️ Penyebab Gangguan", value: $trig, inline: false },
-                { name: "🔍 Tinjau Kelalaian di Sini", value: $log, inline: false }
-              ]' > fields_payload.json
-          fi
-
-      - name: Kirim Notifikasi Aman via JQ
-        if: steps.format.outputs.SHOULD_SEND == 'true'
-        run: |
-          FIELDS_DATA=$(cat fields_payload.json)
+          SUCCESS_JSON=$(cat success_payload.json)
+          REPO_NAME="${{ github.repository }}"
+          
+          # Buat daftar list teks markdown untuk embed Discord
+          FIELDS=$(jq -n --argjson items "$SUCCESS_JSON" '[
+            {
+              name: "🏰 Sektor Repositori",
+              value: ("`" + $items[0].branch + "`"),
+              inline: false
+            },
+            {
+              name: "✨ Melodi Alur Kerja yang Berhasil (" + ($items | length | tostring) + " Tugas)",
+              value: [($items[] | "• **\(.name)** (Pertemuan #\(.run_number)) - [Lihat Log](\(.url))")] | join("\n"),
+              inline: false
+            }
+          ]')
 
           jq -n \
-            --arg title "${{ steps.format.outputs.TITLE }}" \
-            --arg desc "${{ steps.format.outputs.DESC }}" \
-            --arg color "${{ steps.format.outputs.COLOR }}" \
-            --arg footer_text "${{ steps.format.outputs.FOOTER }}" \
-            --argjson fields "$FIELDS_DATA" \
+            --arg title "♫~ Ah, keharmonisan yang indah..." \
+            --arg desc "Semuanya berjalan dengan sangat damai, bagai melodi yang mengalun tanpa cela... Alur kerja kelompokmu menari dengan sempurna hari ini.~" \
+            --arg color "16764142" \
+            --arg footer "🕊️ 'Tidurlah dengan damai, biarkan malam menghapus air matamu...'" \
+            --argjson fields "$FIELDS" \
             '{
               embeds: [{
                 title: $title,
                 description: $desc,
                 color: ($color | tonumber),
                 fields: $fields,
-                footer: { text: $footer_text }
+                footer: { text: $footer }
               }]
-            }' > payload.json
+            }' > discord_success.json
 
-          curl -H "Content-Type: application/json" \
-               -X POST \
-               -d @payload.json \
-               "${{ steps.format.outputs.TARGET_WEBHOOK }}"
+          curl -H "Content-Type: application/json" -X POST -d @discord_success.json "$DISCORD_WEBHOOK"
+          echo "📬 Rangkuman sukses berhasil dikirim!"
+
+      # ==========================================
+      # STEP 3: KIRIM NOTIFIKASI YANG ERROR (GAGAL)
+      # ==========================================
+      - name: Kirim Rangkuman Gagal ke Arlecchino
+        if: steps.analyzer.outputs.has_fail == 'true'
+        env:
+          DISCORD_WEBHOOK_FAIL: ${{ secrets.DISCORD_WEBHOOK_FAIL }}
+        run: |
+          FAIL_JSON=$(cat fail_payload.json)
+          
+          FIELDS=$(jq -n --argjson items "$FAIL_JSON" '[
+            {
+              name: "🗺️ Sektor Repositori Target",
+              value: ("`" + $items[0].branch + "`"),
+              inline: false
+            },
+            {
+              name: "🚨 Operasi Sistem yang Rusak (" + ($items | length | tostring) + " Gangguan)",
+              value: [($items[] | "• **\(.name)** (Evaluasi #\(.run_number)) - [Investigasi](\(.url))")] | join("\n"),
+              inline: false
+            }
+          ]')
+
+          jq -n \
+            --arg title "🩸 Laporan Kegagalan Massal: House of the Hearth" \
+            --arg desc "Ada gangguan serius pada sistem kita. Beberapa alur kerja gagal menyelesaikan tugasnya secara bersamaan di bawah pengawasanku. Evaluasi segera!" \
+            --arg color "10038562" \
+            --arg footer "🐦‍⬛ 'Di dalam kegelapan, kedisiplinan adalah satu-satunya cahaya yang tersisa.'" \
+            --argjson fields "$FIELDS" \
+            '{
+              embeds: [{
+                title: $title,
+                description: $desc,
+                color: ($color | tonumber),
+                fields: $fields,
+                footer: { text: $footer }
+              }]
+            }' > discord_fail.json
+
+          curl -H "Content-Type: application/json" -X POST -d @discord_fail.json "$DISCORD_WEBHOOK_FAIL"
+          echo "📬 Rangkuman gagal berhasil dikirim!"
