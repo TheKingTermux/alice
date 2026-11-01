@@ -40,7 +40,7 @@ jobs:
             let updatedCount = 0;
             let syncedCount = 0;
             let failedCount = 0;
-            let closedCount = 0; // Tambahan: Penghitung isu yang ditutup otomatis
+            let closedCount = 0;
 
             for (const issue of issues) {
               const oldBody = issue.body || '';
@@ -60,13 +60,22 @@ jobs:
               
               console.log(`\n⏳ Menyelaraskan Issue #${issue.number} (GHSA: ${ghsa || 'N/A'}, CVE: ${cveFallback || 'N/A'})...`);
 
-              // 2. Deteksi Jenis Issue & Status Sumber (Tambahan Pengecekan Closed)
+              // 2. Deteksi Jenis Issue & Status Sumber (Dengan Ekstraksi PR yang Akurat)
               let sourceUrl = '';
               let sourceNumber = '';
               let sourceType = 'PR';
               let isSourceClosed = false;
               let sourceDisplayName = 'Sumber';
+              let prNumber = null;
+              let prUrl = null;
               
+              // Ekstrak PR jika ada di dalam body
+              const prMatchBody = oldBody.match(/PR #(\d+)/i) || oldBody.match(/- PR: https:\/\/github\.com\/[^\/]+\/[^\/]+\/pull\/(\d+)/i);
+              if (prMatchBody) {
+                prNumber = prMatchBody[1];
+                prUrl = `https://github.com/${owner}/${repo}/pull/${prNumber}`;
+              }
+
               const alertMatch = oldBody.match(/\[Dependabot Alert #(\d+)\]\((https:\/\/[^\s\)]+)\)/i) || oldBody.match(/Alert Link:\s*(https:\/\/[^\s]+)/i);
               if (alertMatch) {
                 sourceType = 'Alert';
@@ -84,10 +93,8 @@ jobs:
                   }
                 } catch (e) {}
               } else {
-                const prMatch = oldBody.match(/PR #(\d+)/i) || [];
-                sourceNumber = prMatch[1] || 'Unknown';
-                const urlMatch = oldBody.match(/- PR: (https:\/\/github.com\/[^\s]+)/i) || [];
-                sourceUrl = urlMatch[1] || `https://github.com/${owner}/${repo}/pull/${sourceNumber}`;
+                sourceNumber = prNumber || 'Unknown';
+                sourceUrl = prUrl || `https://github.com/${owner}/${repo}/pull/${sourceNumber}`;
                 sourceDisplayName = `PR #${sourceNumber}`;
 
                 if (sourceNumber !== 'Unknown') {
@@ -103,19 +110,33 @@ jobs:
                 }
               }
 
-              // Tambahan: Tutup isu otomatis jika sumbernya sudah tertutup dan isu masih open
+              // Tutup isu otomatis dengan kalimat profesional jika sumber sudah tertutup
               if (isSourceClosed && issue.state === 'open') {
-                console.log(`🔒 Menutup Issue #${issue.number} karena ${sourceDisplayName} sudah ditutup.`);
+                console.log(`🔒 Menutup Issue #${issue.number} karena sumber terkait sudah ditutup.`);
+                
+                let closureMessage = `Isu ini telah berhasil dibenahi`;
+                if (prNumber) {
+                  closureMessage += ` melalui [PR #${prNumber}](https://github.com/${owner}/${repo}/pull/${prNumber})`;
+                }
+                if (sourceType === 'Alert') {
+                  closureMessage += ` dan [Dependabot Alert #${sourceNumber}](${sourceUrl}) telah ditutup. Menutup isu terkait.`;
+                } else {
+                  closureMessage += `. Menutup isu terkait.`;
+                }
+
                 await github.rest.issues.createComment({
                   owner, repo, issue_number: issue.number,
-                  body: `Isu ini sudah dibenahi dan ${sourceDisplayName} sudah ditutup, menutup isu.`
+                  body: closureMessage
                 });
+
                 await github.rest.issues.update({
                   owner, repo, issue_number: issue.number, state: 'closed', state_reason: 'completed'
                 });
+
                 if (!currentLabels.includes('Fixed')) {
                   await github.rest.issues.addLabels({ owner, repo, issue_number: issue.number, labels: ['Fixed'] });
                 }
+
                 closedCount++;
                 continue;
               }
@@ -396,7 +417,7 @@ jobs:
             core.setOutput('total', issues.length);
             core.setOutput('updated', updatedCount);
             core.setOutput('synced', syncedCount);
-            core.setOutput('closed_count', closedCount); // Tambahan output closed
+            core.setOutput('closed_count', closedCount);
             core.setOutput('failed', failedCount);
 
       - name: Kirim Laporan ke Discord (Scribe Alhaitham)
