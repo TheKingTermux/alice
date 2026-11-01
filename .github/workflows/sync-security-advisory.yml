@@ -40,6 +40,7 @@ jobs:
             let updatedCount = 0;
             let syncedCount = 0;
             let failedCount = 0;
+            let closedCount = 0; // Tambahan: Penghitung isu yang ditutup otomatis
 
             for (const issue of issues) {
               const oldBody = issue.body || '';
@@ -59,21 +60,64 @@ jobs:
               
               console.log(`\n⏳ Menyelaraskan Issue #${issue.number} (GHSA: ${ghsa || 'N/A'}, CVE: ${cveFallback || 'N/A'})...`);
 
-              // 2. Deteksi Jenis Issue
+              // 2. Deteksi Jenis Issue & Status Sumber (Tambahan Pengecekan Closed)
               let sourceUrl = '';
               let sourceNumber = '';
               let sourceType = 'PR';
+              let isSourceClosed = false;
+              let sourceDisplayName = 'Sumber';
               
               const alertMatch = oldBody.match(/\[Dependabot Alert #(\d+)\]\((https:\/\/[^\s\)]+)\)/i) || oldBody.match(/Alert Link:\s*(https:\/\/[^\s]+)/i);
               if (alertMatch) {
                 sourceType = 'Alert';
                 sourceNumber = alertMatch[1];
                 sourceUrl = alertMatch[2];
+                sourceDisplayName = `Dependabot Alert #${sourceNumber}`;
+
+                try {
+                  const alertRes = await github.request('GET /repos/{owner}/{repo}/dependabot/alerts/{alert_number}', {
+                    owner, repo, alert_number: parseInt(sourceNumber)
+                  });
+                  if (alertRes.data && alertRes.data.state !== 'open') {
+                    isSourceClosed = true;
+                    console.log(`🔒 Dependabot Alert #${sourceNumber} terdeteksi sudah ditutup.`);
+                  }
+                } catch (e) {}
               } else {
                 const prMatch = oldBody.match(/PR #(\d+)/i) || [];
                 sourceNumber = prMatch[1] || 'Unknown';
                 const urlMatch = oldBody.match(/- PR: (https:\/\/github.com\/[^\s]+)/i) || [];
                 sourceUrl = urlMatch[1] || `https://github.com/${owner}/${repo}/pull/${sourceNumber}`;
+                sourceDisplayName = `PR #${sourceNumber}`;
+
+                if (sourceNumber !== 'Unknown') {
+                  try {
+                    const prRes = await github.request('GET /repos/{owner}/{repo}/pulls/{pull_number}', {
+                      owner, repo, pull_number: parseInt(sourceNumber)
+                    });
+                    if (prRes.data && prRes.data.state !== 'open') {
+                      isSourceClosed = true;
+                      console.log(`🔒 Pull Request #${sourceNumber} terdeteksi sudah ditutup.`);
+                    }
+                  } catch (e) {}
+                }
+              }
+
+              // Tambahan: Tutup isu otomatis jika sumbernya sudah tertutup dan isu masih open
+              if (isSourceClosed && issue.state === 'open') {
+                console.log(`🔒 Menutup Issue #${issue.number} karena ${sourceDisplayName} sudah ditutup.`);
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: issue.number,
+                  body: `Isu ini sudah dibenahi dan ${sourceDisplayName} sudah ditutup, menutup isu.`
+                });
+                await github.rest.issues.update({
+                  owner, repo, issue_number: issue.number, state: 'closed', state_reason: 'completed'
+                });
+                if (!currentLabels.includes('Fixed')) {
+                  await github.rest.issues.addLabels({ owner, repo, issue_number: issue.number, labels: ['Fixed'] });
+                }
+                closedCount++;
+                continue;
               }
 
               const pkgMatch = oldBody.match(/\*\*Package:\*\*\s*`?([^\n`]+)`?/i) || [];
@@ -352,6 +396,7 @@ jobs:
             core.setOutput('total', issues.length);
             core.setOutput('updated', updatedCount);
             core.setOutput('synced', syncedCount);
+            core.setOutput('closed_count', closedCount); // Tambahan output closed
             core.setOutput('failed', failedCount);
 
       - name: Kirim Laporan ke Discord (Scribe Alhaitham)
@@ -361,11 +406,12 @@ jobs:
           TOTAL_ISSUES: ${{ steps.sync_task.outputs.total }}
           UPDATED: ${{ steps.sync_task.outputs.updated }}
           SYNCED: ${{ steps.sync_task.outputs.synced }}
+          CLOSED_COUNT: ${{ steps.sync_task.outputs.closed_count }}
           FAILED: ${{ steps.sync_task.outputs.failed }}
         run: |
           DESC="📖 **Laporan Penyelarasan Akademiya**"$'\n\n'"Pembaruan arsip selesai. Fakta dan logika telah diperbarui."
           
-          if [ "$UPDATED" -eq 0 ] && [ "$FAILED" -eq 0 ]; then
+          if [ "$UPDATED" -eq 0 ] && [ "$CLOSED_COUNT" -eq 0 ] && [ "$FAILED" -eq 0 ]; then
             FOOTER_QUOTE="✨ 'Tidak ada anomali yang mengharuskanku untuk lembur hari ini.'"
           else
             FOOTER_QUOTE="📘 'Catatan yang akurat adalah fondasi dari setiap keputusan.'"
@@ -378,6 +424,7 @@ jobs:
             --arg total "${TOTAL_ISSUES:-0}" \
             --arg updated "${UPDATED:-0}" \
             --arg synced "${SYNCED:-0}" \
+            --arg closed "${CLOSED_COUNT:-0}" \
             --arg failed "${FAILED:-0}" \
             --arg footer_text "$FOOTER_QUOTE" \
             '{
@@ -388,6 +435,7 @@ jobs:
                 fields: [
                   { name: "📁 Repositori", value: ("`" + $repo + "`"), inline: false },
                   { name: "🔍 Total Arsip Diperiksa", value: $total, inline: true },
+                  { name: "🔒 Isu Ditutup (Fixed)", value: $closed, inline: true },
                   { name: "📝 Berhasil Diperbarui", value: $updated, inline: true },
                   { name: "✅ Sudah Sinkron", value: $synced, inline: true },
                   { name: "⚠️ Gagal/Error", value: $failed, inline: true }
